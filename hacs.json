@@ -1,6 +1,6 @@
 {
-    "name": "Dual Axis Controller",
-    "render_as_panel": false,
-    "filename": "dual-axis-controller.js",
-    "documentation": "https://github.com/MattOpenHomeFoundation/dual-axis-controller"
+  "name": "Dual Axis Controller v4",
+  "render_readme": true,
+  "filename": "dual-axis-controller.js",
+  "iot_class": "Local Push"
 }

@@ -1,73 +1,26 @@
-# React + TypeScript + Vite
+# Dual Axis Controller 🎮
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A premium, fluid side-by-side Lovelace card for Home Assistant, designed for maximum aesthetic control over your smart lights. 
 
-Currently, two official plugins are available:
+## ✨ Features
+- **Responsive Trackpad**: An interactive 2D color and brightness control surface that fluidly scales to fit any dashboard layout without breaking boundaries.
+- **Dual Modes**: Seamlessly switch between precise Kelvin Color Temperature control and full-range Hue/Saturation Spectrum mode.
+- **Side-by-Side Design**: Eliminates awkward vertical stacking by clustering quick-action mode buttons alongside the main trackpad.
+- **Shadow DOM Isolation**: Guarantees that global Home Assistant themes and unpredictable dashboard updates will never accidentally squash or break your card's layout.
+- **Live Peer Indicators**: Trackpad displays the real-time position of other active lights.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 📦 Installation via HACS
+1. Open HACS and navigate to **Frontend**.
+2. Click the three dots in the top right -> **Custom repositories**.
+3. Add this repository URL and select category **Lovelace**.
+4. Click **Download** and reload your browser window.
 
-## React Compiler
+## ⚙️ Configuration
+Add the custom card to your dashboard using the following YAML:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```yaml
+type: custom:dual-controller-v3
+entity: light.your_light_entity
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+*(Note: Ensure your light entity supports `color_temp` or `hs_color` features for the trackpad to function).*
