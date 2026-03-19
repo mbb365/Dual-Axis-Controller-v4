@@ -1,0 +1,6 @@
+{
+    "name": "Dual Axis Controller",
+    "render_as_panel": false,
+    "filename": "dual-axis-controller.js",
+    "documentation": "https://github.com/MattOpenHomeFoundation/dual-axis-controller"
+}
