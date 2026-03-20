@@ -17,10 +17,9 @@ interface HaloProps {
     onToggle: () => void;
     mode: 'temperature' | 'spectrum';
     peerLights?: PeerLight[];
-    lightMode?: boolean;
 }
 
-const SPECTRUM_GRADIENT = 'linear-gradient(to top, #fff, transparent), conic-gradient(from 225deg, #ff00ff, #ff0000, #ffaf00, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff)';
+const SPECTRUM_GRADIENT = 'linear-gradient(to right, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%)';
 
 const HALO_CSS = `
 .halo-container {
@@ -35,8 +34,9 @@ const HALO_CSS = `
 
 .trackpadWrapperV2 {
     width: 100%;
+    max-width: 240px;
     position: relative;
-    padding-bottom: 100%;
+    aspect-ratio: 1 / 1;
 }
 
 .trackpad {
@@ -45,13 +45,12 @@ const HALO_CSS = `
     left: 0;
     width: 100%;
     height: 100%;
-    border-radius: 8px; /* Slightly tighter rounding to match CompactCard */
+    border-radius: 8px;
     cursor: crosshair;
     touch-action: none;
     border: none;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    box-shadow: none;
     transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-    overflow: hidden;
 }
 
 .trackpad.off {
@@ -65,9 +64,8 @@ const HALO_CSS = `
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background: transparent;
     border: 2.5px solid white;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15), 0 4px 12px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
     transform: translate(-50%, -50%);
     pointer-events: none;
     transition: all 0.1s ease-out, opacity 0.5s ease-in-out;
@@ -119,8 +117,7 @@ export const Halo = ({
     onChange,
     onToggle,
     mode,
-    peerLights = [],
-    lightMode = false
+    peerLights = []
 }: HaloProps) => {
     const trackpadRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
@@ -182,7 +179,7 @@ export const Halo = ({
     if (mode === 'spectrum') {
         backgroundGradient = SPECTRUM_GRADIENT;
     } else {
-        backgroundGradient = 'linear-gradient(to top, #fff, transparent), linear-gradient(to right, #7fd1ff, #fff 50%, #ffb366)';
+        backgroundGradient = 'linear-gradient(to right, #7fd1ff, #fff 50%, #ffb366)';
     }
 
     const isRepresentable = (_h: number, s: number, m: 'temperature' | 'spectrum') => {
@@ -207,9 +204,7 @@ export const Halo = ({
                     onPointerUp={handlePointerUp}
                     onClick={handleClick}
                     style={{
-                        background: lightMode
-                            ? `${backgroundGradient}`
-                            : `linear-gradient(to top, #1a1a1a 0%, rgba(0,0,0,0) 100%), ${backgroundGradient}`
+                        background: `linear-gradient(to top, var(--ha-card-background, var(--card-background-color, #ffffff)) 0%, transparent 100%), ${backgroundGradient}`
                     }}
                 >
                     {peerLights.map((peer, i) => {
@@ -236,13 +231,16 @@ export const Halo = ({
                             className="halo-indicator"
                             style={{
                                 left: `${xPosFromHueSat(hue, saturation, mode)}%`,
-                                top: `${100 - brightness}%`
+                                top: `${100 - brightness}%`,
+                                backgroundColor: mode === 'spectrum'
+                                    ? `hsl(${hue}, 100%, 50%)`
+                                    : `hsl(${hue}, ${saturation}%, ${100 - (saturation / 100) * 25}%)`
                             }}
                         />
                     )}
                     <div
                         className="brightnessValue"
-                        style={{ color: lightMode ? 'rgba(0,0,0,0.15)' : 'rgba(0,0,0,0.3)' }}
+                        style={{ color: 'var(--secondary-text-color, rgba(0,0,0,0.3))' }}
                     >
                         {Math.round(brightness)}%
                     </div>
