@@ -1,5 +1,5 @@
 {
-  "name": "Dual Axis Controller v4",
+  "name": "Dual Axis Controller v4.0.0",
   "render_readme": true,
   "filename": "dual-axis-controller.js",
   "iot_class": "Local Push"

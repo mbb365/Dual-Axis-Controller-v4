@@ -17,6 +17,7 @@ interface HaloProps {
     onToggle: () => void;
     mode: 'temperature' | 'spectrum';
     peerLights?: PeerLight[];
+    activeSceneName?: string | null;
 }
 
 const SPECTRUM_GRADIENT = 'linear-gradient(to right, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%)';
@@ -117,7 +118,8 @@ export const Halo = ({
     onChange,
     onToggle,
     mode,
-    peerLights = []
+    peerLights = [],
+    activeSceneName
 }: HaloProps) => {
     const trackpadRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
@@ -202,6 +204,7 @@ export const Halo = ({
                     onPointerDown={handlePointerDown}
                     onPointerMove={handlePointerMove}
                     onPointerUp={handlePointerUp}
+                    onPointerCancel={handlePointerUp}
                     onClick={handleClick}
                     style={{
                         background: `linear-gradient(to top, var(--ha-card-background, var(--card-background-color, #ffffff)) 0%, transparent 100%), ${backgroundGradient}`
@@ -221,7 +224,7 @@ export const Halo = ({
                                     opacity: peer.isOn ? 0.4 : 0.1,
                                     backgroundColor: mode === 'spectrum'
                                         ? `hsl(${peer.hue}, 100%, 50%)`
-                                        : `hsl(${peer.hue}, ${peer.saturation}%, 90%)` 
+                                        : `hsl(${peer.hue}, ${peer.saturation || 0}%, 75%)`
                                 }}
                             />
                         );
@@ -236,7 +239,28 @@ export const Halo = ({
                                     ? `hsl(${hue}, 100%, 50%)`
                                     : `hsl(${hue}, ${saturation}%, ${100 - (saturation / 100) * 25}%)`
                             }}
-                        />
+                        >
+                            {activeSceneName && (
+                                <div style={{
+                                    position: 'absolute',
+                                    top: '40px',
+                                    left: '50%',
+                                    transform: 'translateX(-50%)',
+                                    fontSize: '0.65rem',
+                                    fontWeight: 700,
+                                    color: 'white',
+                                    textShadow: '0 1px 4px rgba(0,0,0,0.4)',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.1em',
+                                    pointerEvents: 'none',
+                                    whiteSpace: 'nowrap',
+                                    opacity: 0.9,
+                                    animation: 'fadeIn 0.3s ease-out'
+                                }}>
+                                    {activeSceneName}
+                                </div>
+                            )}
+                        </div>
                     )}
                     <div
                         className="brightnessValue"

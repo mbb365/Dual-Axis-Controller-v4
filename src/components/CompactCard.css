@@ -1,3 +1,10 @@
+.card-container {
+    container-type: inline-size;
+    width: 100%;
+    box-sizing: border-box;
+    background: blue;
+}
+
 .card-body {
     flex: 1;
     min-width: 0;
@@ -6,7 +13,15 @@
     flex-direction: row;
     gap: 16px;
     justify-content: center;
-    transition: flex-direction 0.3s ease;
+    align-items: flex-end; /* Align buttons to bottom of trackpad */
+    transition: all 0.3s ease;
+}
+
+.halo-wrapper {
+    flex: 1;
+    max-width: 240px;
+    aspect-ratio: 1 / 1;
+    position: relative;
 }
 
 .mode-buttons-container {
@@ -15,20 +30,26 @@
     justify-content: flex-end;
     gap: 12px;
     z-index: 20;
-    transition: flex-direction 0.3s ease;
+    transition: all 0.3s ease;
 }
 
-/* Mobile / Narrow view */
-@media screen and (max-width: 340px) {
+/* Stacked layout for very narrow containers (e.g. phone portrait or tight grid) */
+@container (max-width: 280px) {
     .card-body {
         flex-direction: column !important;
         align-items: center;
+        gap: 12px;
+    }
+    
+    .halo-wrapper {
+        max-width: 100% !important;
+        width: 100% !important;
     }
     
     .mode-buttons-container {
         flex-direction: row !important;
         justify-content: center !important;
         width: 100%;
-        margin-top: 8px;
+        margin-top: 4px;
     }
 }
