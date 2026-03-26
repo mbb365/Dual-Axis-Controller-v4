@@ -2,17 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { CompactCard, type CardLayout } from './components/CompactCard';
 import { callLightService, getLightState } from './services/ha-connection';
 
-type HassAction = 'tap' | 'hold' | 'double_tap';
-
 export interface CardAppProps {
     hass: any;
     entityId: string;
     icon?: string;
     name?: string;
     layout?: CardLayout | 'auto';
-    onCardAction?: (action: HassAction) => void;
-    canHoldAction?: boolean;
-    canDoubleTapAction?: boolean;
+    onTapAction?: () => void;
+    onHoldAction?: () => void;
+    onDoubleTapAction?: () => void;
 }
 
 export function CardApp({
@@ -21,9 +19,9 @@ export function CardApp({
     icon = 'mdi:lightbulb',
     name,
     layout = 'compact',
-    onCardAction,
-    canHoldAction = false,
-    canDoubleTapAction = false,
+    onTapAction,
+    onHoldAction,
+    onDoubleTapAction,
 }: CardAppProps) {
     const light = getLightState(hass, entityId);
     const lightName = name || light?.attributes.friendly_name || entityId;
@@ -49,6 +47,7 @@ export function CardApp({
     const [kelvin, setKelvin] = useState<number | null>(null);
     const [isOn, setIsOn] = useState(false);
     const [uiMode, setUiMode] = useState<'temperature' | 'spectrum'>('temperature');
+    const [showPopup, setShowPopup] = useState(false);
 
     useEffect(() => {
         if (!rootRef.current) return;
@@ -223,6 +222,17 @@ export function CardApp({
         [markInteraction, supportsSpectrum, supportsTemperature]
     );
 
+    const handleTap = useCallback(() => {
+        if (onTapAction) {
+            onTapAction();
+            return;
+        }
+
+        if (resolvedLayout === 'compact') {
+            setShowPopup(true);
+        }
+    }, [onTapAction, resolvedLayout]);
+
     if (!light) {
         return (
             <div ref={rootRef}>
@@ -262,10 +272,56 @@ export function CardApp({
                 onModeChange={handleModeChange}
                 onControlsChange={handleControlsChange}
                 onToggle={handleToggle}
-                onCardAction={onCardAction}
-                canHoldAction={canHoldAction}
-                canDoubleTapAction={canDoubleTapAction}
+                onTapAction={handleTap}
+                onHoldAction={onHoldAction}
+                onDoubleTapAction={onDoubleTapAction}
             />
+
+            {resolvedLayout === 'compact' && showPopup ? (
+                <div
+                    onClick={() => setShowPopup(false)}
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        background: 'rgba(15, 23, 42, 0.18)',
+                        display: 'grid',
+                        placeItems: 'center',
+                        padding: '24px',
+                        boxSizing: 'border-box',
+                        zIndex: 1000,
+                    }}
+                >
+                    <div
+                        onClick={(event) => event.stopPropagation()}
+                        style={{
+                            width: 'min(100%, 460px)',
+                            background: 'var(--ha-card-background, var(--card-background-color, #ffffff))',
+                            borderRadius: 'var(--ha-card-border-radius, 12px)',
+                            boxShadow: 'var(--ha-card-box-shadow, 0 8px 24px rgba(15, 23, 42, 0.16))',
+                            border: '1px solid var(--divider-color, rgba(0, 0, 0, 0.08))',
+                            padding: '16px',
+                            boxSizing: 'border-box',
+                        }}
+                    >
+                        <CompactCard
+                            layout="expanded"
+                            lightName={lightName}
+                            icon={icon}
+                            isOn={isOn}
+                            hue={hue}
+                            saturation={saturation}
+                            brightness={brightness}
+                            kelvin={kelvin}
+                            uiMode={uiMode}
+                            canUseTemperature={supportsTemperature}
+                            canUseSpectrum={supportsSpectrum}
+                            onModeChange={handleModeChange}
+                            onControlsChange={handleControlsChange}
+                            onToggle={handleToggle}
+                        />
+                    </div>
+                </div>
+            ) : null}
         </div>
     );
 }

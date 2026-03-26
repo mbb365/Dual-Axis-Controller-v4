@@ -3,7 +3,6 @@ import compactCardStyles from './CompactCard.css?inline';
 import { Halo } from './Halo';
 
 export type CardLayout = 'compact' | 'expanded';
-type CardAction = 'tap' | 'hold' | 'double_tap';
 
 interface CompactCardProps {
     layout: CardLayout;
@@ -20,9 +19,9 @@ interface CompactCardProps {
     onModeChange: (mode: 'temperature' | 'spectrum') => void;
     onControlsChange: (h: number, s: number, b: number) => void;
     onToggle: () => void;
-    onCardAction?: (action: CardAction) => void;
-    canHoldAction?: boolean;
-    canDoubleTapAction?: boolean;
+    onTapAction?: () => void;
+    onHoldAction?: () => void;
+    onDoubleTapAction?: () => void;
 }
 
 function formatStatus(isOn: boolean, brightness: number, kelvin: number | null, uiMode: 'temperature' | 'spectrum') {
@@ -119,9 +118,9 @@ export function CompactCard({
     onModeChange,
     onControlsChange,
     onToggle,
-    onCardAction,
-    canHoldAction = false,
-    canDoubleTapAction = false,
+    onTapAction,
+    onHoldAction,
+    onDoubleTapAction,
 }: CompactCardProps) {
     const holdTimer = useRef<number | null>(null);
     const tapTimer = useRef<number | null>(null);
@@ -151,13 +150,13 @@ export function CompactCard({
     };
 
     const handlePointerDown = () => {
-        if (layout !== 'compact' || !onCardAction || !canHoldAction) return;
+        if (layout !== 'compact' || !onHoldAction) return;
 
         holdTriggered.current = false;
         clearHold();
         holdTimer.current = window.setTimeout(() => {
             holdTriggered.current = true;
-            onCardAction('hold');
+            onHoldAction();
         }, 500);
     };
 
@@ -166,43 +165,43 @@ export function CompactCard({
     };
 
     const handleClick = () => {
-        if (layout !== 'compact' || !onCardAction) return;
+        if (layout !== 'compact' || !onTapAction) return;
         if (holdTriggered.current) {
             holdTriggered.current = false;
             return;
         }
 
-        if (canDoubleTapAction) {
+        if (onDoubleTapAction) {
             if (tapTimer.current) {
                 window.clearTimeout(tapTimer.current);
                 tapTimer.current = null;
-                onCardAction('double_tap');
+                onDoubleTapAction();
                 return;
             }
 
             tapTimer.current = window.setTimeout(() => {
                 tapTimer.current = null;
-                onCardAction('tap');
+                onTapAction();
             }, 250);
             return;
         }
 
-        onCardAction('tap');
+        onTapAction();
     };
 
     const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-        if (layout !== 'compact' || !onCardAction) return;
+        if (layout !== 'compact' || !onTapAction) return;
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
-        onCardAction('tap');
+        onTapAction();
     };
 
     if (layout === 'compact') {
         return (
             <div
                 className="dual-card dual-card--compact"
-                role={onCardAction ? 'button' : undefined}
-                tabIndex={onCardAction ? 0 : -1}
+                role={onTapAction ? 'button' : undefined}
+                tabIndex={onTapAction ? 0 : -1}
                 onPointerDown={handlePointerDown}
                 onPointerUp={handlePointerEnd}
                 onPointerLeave={handlePointerEnd}
@@ -234,10 +233,7 @@ export function CompactCard({
     return (
         <div className="dual-card dual-card--expanded">
             <style>{compactCardStyles}</style>
-            <div className="dual-card__expanded-heading">
-                <div className="dual-card__eyebrow">Light</div>
-                <div className="dual-card__expanded-title">{lightName}</div>
-            </div>
+            <div className="dual-card__expanded-title">{lightName}</div>
 
             <div className="dual-card__expanded-header">
                 <div className="dual-card__meta">

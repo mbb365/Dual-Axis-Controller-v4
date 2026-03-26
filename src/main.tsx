@@ -3,7 +3,6 @@ import { useMemo, useState } from 'react';
 import { CardApp } from './App';
 
 function MockHomeAssistant() {
-    const [showPopup, setShowPopup] = useState(false);
     const [mockState, setMockState] = useState({
         state: 'on',
         attributes: {
@@ -77,46 +76,8 @@ function MockHomeAssistant() {
                     margin: '0 auto',
                 }}
             >
-                <CardApp
-                    hass={hass}
-                    entityId="light.preview"
-                    layout="compact"
-                    onCardAction={(action) => {
-                        if (action === 'tap') {
-                            setShowPopup(true);
-                        }
-                    }}
-                />
+                <CardApp hass={hass} entityId="light.preview" layout="compact" />
             </div>
-
-            {showPopup ? (
-                <div
-                    onClick={() => setShowPopup(false)}
-                    style={{
-                        position: 'fixed',
-                        inset: 0,
-                        background: 'rgba(15, 23, 42, 0.18)',
-                        display: 'grid',
-                        placeItems: 'center',
-                        padding: '24px',
-                        boxSizing: 'border-box',
-                    }}
-                >
-                    <div
-                        onClick={(event) => event.stopPropagation()}
-                        style={{
-                            width: 'min(100%, 460px)',
-                            background: '#ffffff',
-                            borderRadius: '28px',
-                            boxShadow: '0 24px 64px rgba(15, 23, 42, 0.18)',
-                            padding: '20px',
-                            boxSizing: 'border-box',
-                        }}
-                    >
-                        <CardApp hass={hass} entityId="light.preview" layout="expanded" />
-                    </div>
-                </div>
-            ) : null}
         </div>
     );
 }

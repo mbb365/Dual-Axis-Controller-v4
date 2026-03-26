@@ -4,8 +4,6 @@ import { createRoot } from 'react-dom/client';
 import { CardApp } from './App';
 import type { CardLayout } from './components/CompactCard';
 
-type HassAction = 'tap' | 'hold' | 'double_tap';
-
 interface ActionConfig {
     action: string;
     [key: string]: unknown;
@@ -72,9 +70,9 @@ class DualControllerCard extends HTMLElement {
 
         return {
             rows: 2,
-            columns: 8,
+            columns: 6,
             min_rows: 2,
-            min_columns: 6,
+            min_columns: 3,
         };
     }
 
@@ -88,7 +86,7 @@ class DualControllerCard extends HTMLElement {
         };
     }
 
-    private _dispatchAction(action: HassAction) {
+    private _dispatchAction(action: 'tap' | 'hold' | 'double_tap') {
         if (!this._config) return;
 
         if (action === 'hold' && !this._config.hold_action) return;
@@ -100,7 +98,7 @@ class DualControllerCard extends HTMLElement {
         }) as Event & {
             detail: {
                 config: DualControllerConfig;
-                action: HassAction;
+                action: 'tap' | 'hold' | 'double_tap';
             };
         };
 
@@ -139,9 +137,11 @@ class DualControllerCard extends HTMLElement {
                 icon={this._config.icon}
                 name={this._config.name}
                 layout={this._config.layout ?? 'compact'}
-                onCardAction={(action) => this._dispatchAction(action)}
-                canHoldAction={Boolean(this._config.hold_action)}
-                canDoubleTapAction={Boolean(this._config.double_tap_action)}
+                onTapAction={this._config.tap_action ? () => this._dispatchAction('tap') : undefined}
+                onHoldAction={this._config.hold_action ? () => this._dispatchAction('hold') : undefined}
+                onDoubleTapAction={
+                    this._config.double_tap_action ? () => this._dispatchAction('double_tap') : undefined
+                }
             />
         );
     }
