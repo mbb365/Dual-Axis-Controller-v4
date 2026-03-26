@@ -74,39 +74,93 @@ function getRgbText(hue: number, saturation: number, brightness: number) {
     return `R${red} G${green} B${blue}`;
 }
 
-function buildCompactBackground(isOn: boolean, hue: number, saturation: number, uiMode: 'temperature' | 'spectrum') {
+function buildCompactBackground(
+    isOn: boolean,
+    hue: number,
+    saturation: number,
+    brightness: number,
+    uiMode: 'temperature' | 'spectrum'
+) {
     if (!isOn) {
-        return 'linear-gradient(120deg, rgba(248, 248, 248, 0.98) 0%, rgba(235, 237, 240, 0.98) 100%)';
+        return 'linear-gradient(135deg, rgba(255, 255, 255, 0.72) 0%, rgba(244, 246, 248, 0.88) 44%, rgba(231, 234, 239, 0.94) 100%)';
     }
 
-    if (uiMode === 'spectrum') {
-        const vividHue = `hsla(${hue}, ${Math.max(45, saturation)}%, 72%, 0.95)`;
-        const softHue = `hsla(${hue}, ${Math.max(20, saturation * 0.6)}%, 96%, 0.98)`;
-        return `linear-gradient(120deg, ${softHue} 0%, ${vividHue} 100%)`;
+    const intensity = Math.max(0, Math.min(1, brightness / 100));
+
+    if (uiMode === 'temperature') {
+        const normalizedSaturation = Math.max(0, Math.min(1, saturation / 100));
+        const whiteFocus = `hsla(0, 0%, ${98 - intensity * 1.5}%, ${0.7 - normalizedSaturation * 0.2})`;
+        const softGrey = `hsla(220, 14%, ${91 - intensity * 6}%, ${0.36 + (1 - normalizedSaturation) * 0.18})`;
+        const coolOrWarmTint = `hsla(${hue}, ${10 + normalizedSaturation * 34}%, ${84 - intensity * 12}%, ${
+            0.18 + normalizedSaturation * 0.24
+        })`;
+        const shadowGrey = `hsla(222, 16%, ${83 - intensity * 10}%, ${0.18 + (1 - normalizedSaturation) * 0.16})`;
+
+        return `linear-gradient(135deg, ${whiteFocus} 0%, ${whiteFocus} 22%, ${softGrey} 56%, ${coolOrWarmTint} 82%, ${shadowGrey} 100%)`;
     }
 
-    const cool = 'rgba(224, 241, 255, 0.98)';
-    const center = 'rgba(255, 249, 234, 0.98)';
-    const warm = 'rgba(246, 196, 82, 0.96)';
-    return `linear-gradient(120deg, ${cool} 0%, ${center} 34%, ${warm} 100%)`;
+    const tintSaturation = Math.max(18, uiMode === 'spectrum' ? saturation : saturation * 0.72 + 18);
+    const softTint = `hsla(${hue}, ${Math.max(12, tintSaturation * 0.42)}%, ${98 - intensity * 4}%, ${
+        0.18 + intensity * 0.16
+    })`;
+    const midTint = `hsla(${hue}, ${Math.max(18, tintSaturation * 0.7)}%, ${94 - intensity * 10}%, ${
+        0.24 + intensity * 0.18
+    })`;
+    const richTint = `hsla(${hue}, ${Math.max(24, tintSaturation)}%, ${86 - intensity * 18}%, ${
+        0.3 + intensity * 0.34
+    })`;
+    const tintReach = 38 + intensity * 24;
+
+    return `linear-gradient(135deg, rgba(255, 255, 255, 0.66) 0%, ${softTint} 26%, ${midTint} ${tintReach}%, ${richTint} 100%)`;
 }
 
-function buildIconBackground(isOn: boolean, hue: number, saturation: number, uiMode: 'temperature' | 'spectrum') {
+function buildIconBackground(
+    isOn: boolean,
+    hue: number,
+    saturation: number,
+    brightness: number,
+    uiMode: 'temperature' | 'spectrum'
+) {
     if (!isOn) {
         return 'rgba(140, 149, 159, 0.18)';
     }
 
-    if (uiMode === 'spectrum') {
-        return `hsla(${hue}, ${Math.max(55, saturation)}%, 58%, 0.95)`;
+    if (uiMode === 'temperature') {
+        const normalizedSaturation = Math.max(0, Math.min(1, saturation / 100));
+        const normalizedBrightness = Math.max(0, Math.min(1, brightness / 100));
+        const lightness = 80 + (1 - normalizedSaturation) * 15 + normalizedBrightness * 3;
+        const colorSaturation = normalizedSaturation < 0.12 ? 2 : 10 + normalizedSaturation * 52;
+
+        return `hsla(${hue}, ${colorSaturation}%, ${Math.min(97, lightness)}%, 0.96)`;
     }
 
-    return 'rgba(246, 196, 82, 0.98)';
+    const intensity = Math.max(0, Math.min(1, brightness / 100));
+    const iconSaturation = Math.max(42, uiMode === 'spectrum' ? saturation * 1.08 : saturation * 0.9 + 24);
+
+    return `hsla(${hue}, ${iconSaturation}%, ${52 + intensity * 12}%, 0.94)`;
+}
+
+function buildIconForeground(
+    isOn: boolean,
+    saturation: number,
+    brightness: number,
+    uiMode: 'temperature' | 'spectrum'
+) {
+    if (!isOn) {
+        return 'rgba(90, 99, 109, 0.72)';
+    }
+
+    if (uiMode === 'temperature' && saturation < 12) {
+        return brightness > 55 ? 'rgba(71, 85, 105, 0.9)' : 'rgba(55, 65, 81, 0.86)';
+    }
+
+    return '#ffffff';
 }
 
 export function CompactCard({
     layout,
     lightName,
-    icon,
+    icon: _icon,
     isOn,
     hue,
     saturation,
@@ -196,6 +250,16 @@ export function CompactCard({
         onTapAction();
     };
 
+    const handleIconPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+        event.stopPropagation();
+        clearHold();
+    };
+
+    const handleIconClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+        event.stopPropagation();
+        onToggle();
+    };
+
     if (layout === 'compact') {
         return (
             <div
@@ -209,19 +273,26 @@ export function CompactCard({
                 onClick={handleClick}
                 onKeyDown={handleKeyDown}
                 style={{
-                    background: buildCompactBackground(isOn, hue, saturation, uiMode),
+                    background: buildCompactBackground(isOn, hue, saturation, brightness, uiMode),
                     color: 'var(--primary-text-color, #111827)',
                 }}
             >
                 <style>{compactCardStyles}</style>
-                <div
-                    className="dual-card__icon-shell"
+                <button
+                    type="button"
+                    className="dual-card__icon-shell dual-card__icon-button"
+                    aria-label={`${isOn ? 'Turn off' : 'Turn on'} ${lightName}`}
+                    aria-pressed={isOn}
+                    onPointerDown={handleIconPointerDown}
+                    onPointerUp={(event) => event.stopPropagation()}
+                    onClick={handleIconClick}
                     style={{
-                        background: buildIconBackground(isOn, hue, saturation, uiMode),
+                        background: buildIconBackground(isOn, hue, saturation, brightness, uiMode),
+                        color: buildIconForeground(isOn, saturation, brightness, uiMode),
                     }}
                 >
-                    <ha-icon icon={icon} className="dual-card__icon" />
-                </div>
+                    <ha-icon icon="mdi:power" className="dual-card__icon" />
+                </button>
                 <div className="dual-card__content">
                     <div className="dual-card__title">{lightName}</div>
                     <div className="dual-card__subtitle">{statusText}</div>
@@ -262,6 +333,15 @@ export function CompactCard({
                     onClick={() => onModeChange('spectrum')}
                 >
                     Spectrum
+                </button>
+                <button
+                    type="button"
+                    className={`dual-card__power-pill ${isOn ? 'is-active' : ''}`}
+                    aria-label={`${isOn ? 'Turn off' : 'Turn on'} ${lightName}`}
+                    aria-pressed={isOn}
+                    onClick={onToggle}
+                >
+                    <ha-icon icon="mdi:power" className="dual-card__power-icon" />
                 </button>
                 <button
                     type="button"

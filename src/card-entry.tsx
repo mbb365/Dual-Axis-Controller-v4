@@ -55,7 +55,7 @@ class DualControllerCard extends HTMLElement {
     }
 
     public getCardSize() {
-        return this._config?.layout === 'expanded' ? 7 : 2;
+        return this._config?.layout === 'expanded' ? 7 : 1;
     }
 
     public getGridOptions() {
@@ -69,10 +69,10 @@ class DualControllerCard extends HTMLElement {
         }
 
         return {
-            rows: 2,
-            columns: 6,
-            min_rows: 2,
-            min_columns: 3,
+            rows: 1,
+            columns: 3,
+            min_rows: 1,
+            min_columns: 2,
         };
     }
 

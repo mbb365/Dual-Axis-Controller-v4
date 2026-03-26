@@ -1,21 +1,36 @@
 .dual-card {
     box-sizing: border-box;
     width: 100%;
+    container-type: inline-size;
     border-radius: var(--ha-card-border-radius, 12px);
     font-family: var(--ha-font-family, "Segoe UI", Roboto, sans-serif);
 }
 
 .dual-card--compact {
+    position: relative;
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
-    gap: 12px;
-    min-height: 88px;
-    padding: 14px 16px;
-    box-shadow: var(--ha-card-box-shadow, none);
+    gap: 10px;
+    min-height: 64px;
+    padding: 12px 14px;
+    overflow: hidden;
+    box-shadow:
+        0 10px 24px rgba(15, 23, 42, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.44);
     cursor: pointer;
     transition: box-shadow 0.18s ease;
-    border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.08));
+    border: 1px solid rgba(255, 255, 255, 0.38);
+    backdrop-filter: blur(16px) saturate(150%);
+    -webkit-backdrop-filter: blur(16px) saturate(150%);
+}
+
+.dual-card--compact::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.02) 100%);
+    pointer-events: none;
 }
 
 .dual-card--compact:focus-visible {
@@ -28,26 +43,45 @@
 }
 
 .dual-card__icon-shell {
-    width: 48px;
-    height: 48px;
+    width: 40px;
+    height: 40px;
     border-radius: 999px;
     display: grid;
     place-items: center;
     color: #ffffff;
     flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.34),
+        0 8px 18px rgba(15, 23, 42, 0.12);
+}
+
+.dual-card__icon-button {
+    appearance: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+}
+
+.dual-card__icon-button:focus-visible {
+    outline: 2px solid var(--primary-color, #03a9f4);
+    outline-offset: 2px;
 }
 
 .dual-card__icon {
-    --mdc-icon-size: 24px;
+    --mdc-icon-size: 20px;
 }
 
 .dual-card__content {
+    position: relative;
+    z-index: 1;
     min-width: 0;
 }
 
 .dual-card__title {
     font-size: 1rem;
-    line-height: 1.25;
+    line-height: 1.2;
     font-weight: 500;
     letter-spacing: normal;
     color: var(--primary-text-color, #111827);
@@ -58,9 +92,9 @@
 }
 
 .dual-card__subtitle {
-    margin-top: 2px;
+    margin-top: 1px;
     font-size: 0.875rem;
-    line-height: 1.35;
+    line-height: 1.25;
     color: var(--secondary-text-color, rgba(17, 24, 39, 0.65));
     display: -webkit-box;
     -webkit-line-clamp: 1;
@@ -114,9 +148,10 @@
 
 .dual-card__mode-row {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr) 36px minmax(0, 1fr);
     gap: 8px;
     margin-top: 12px;
+    align-items: center;
 }
 
 .dual-card__mode-pill {
@@ -144,19 +179,57 @@
     transform: translateY(-1px);
 }
 
+.dual-card__power-pill {
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    border: 1px solid rgba(17, 24, 39, 0.16);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.82) 0%, rgba(233, 236, 242, 0.96) 100%);
+    color: rgba(71, 85, 105, 0.86);
+    display: grid;
+    place-items: center;
+    padding: 0;
+    cursor: pointer;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.7),
+        0 6px 14px rgba(15, 23, 42, 0.1);
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.dual-card__power-pill.is-active {
+    border-color: rgba(124, 58, 237, 0.24);
+    color: rgba(124, 58, 237, 0.92);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.76),
+        0 8px 18px rgba(124, 58, 237, 0.18);
+}
+
+.dual-card__power-pill:hover {
+    transform: translateY(-1px);
+}
+
+.dual-card__power-pill:focus-visible {
+    outline: 2px solid var(--primary-color, #03a9f4);
+    outline-offset: 2px;
+}
+
+.dual-card__power-icon {
+    --mdc-icon-size: 18px;
+}
+
 @container (max-width: 380px) {
     .dual-card--compact {
         grid-template-columns: 1fr;
         justify-items: start;
-        gap: 12px;
+        gap: 10px;
     }
 
     .dual-card__icon-shell {
-        width: 40px;
-        height: 40px;
+        width: 36px;
+        height: 36px;
     }
 
     .dual-card__icon {
-        --mdc-icon-size: 20px;
+        --mdc-icon-size: 18px;
     }
 }

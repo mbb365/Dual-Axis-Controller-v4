@@ -34,8 +34,13 @@ const HALO_CSS = `
 }
 
 .halo__pad.is-off {
-    filter: saturate(0.55) brightness(0.88);
     cursor: pointer;
+    border-color: rgba(124, 58, 237, 0.12);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.58),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+        inset 0 0 80px rgba(168, 85, 247, 0.18),
+        0 3px 8px rgba(15, 23, 42, 0.08);
 }
 
 .halo__indicator {
@@ -73,6 +78,36 @@ function xPosFromHueSat(hue: number, sat: number, mode: 'temperature' | 'spectru
     }
 
     return (0.5 + sat / 200) * 100;
+}
+
+function buildTemperatureIndicatorColor(hue: number, saturation: number, brightness: number) {
+    const normalizedSaturation = Math.max(0, Math.min(1, saturation / 100));
+    const normalizedBrightness = Math.max(0, Math.min(1, brightness / 100));
+
+    if (normalizedSaturation < 0.12) {
+        const whiteLightness = 97 + normalizedBrightness * 2;
+        return `hsl(0, 0%, ${Math.min(99, whiteLightness)}%)`;
+    }
+
+    const colorSaturation = 14 + normalizedSaturation * 58;
+    const colorLightness = 94 - normalizedSaturation * 12 + normalizedBrightness * 4;
+    return `hsl(${hue}, ${colorSaturation}%, ${Math.min(97, colorLightness)}%)`;
+}
+
+function buildIndicatorShadow(hue: number, saturation: number, brightness: number, mode: 'temperature' | 'spectrum') {
+    if (mode === 'spectrum') {
+        return `0 0 0 1px rgba(255, 255, 255, 0.28), 0 10px 22px hsla(${hue}, 100%, 52%, 0.34), 0 4px 14px rgba(15, 23, 42, 0.22)`;
+    }
+
+    if (saturation < 12) {
+        return brightness > 55
+            ? '0 0 0 1px rgba(15, 23, 42, 0.08), 0 10px 22px rgba(255, 255, 255, 0.38), 0 4px 14px rgba(15, 23, 42, 0.22)'
+            : '0 0 0 1px rgba(15, 23, 42, 0.12), 0 8px 18px rgba(255, 255, 255, 0.2), 0 4px 14px rgba(15, 23, 42, 0.24)';
+    }
+
+    return `0 0 0 1px rgba(255, 255, 255, 0.3), 0 10px 22px hsla(${hue}, ${18 + saturation * 0.5}%, ${
+        72 - saturation * 0.08
+    }%, 0.28), 0 4px 14px rgba(15, 23, 42, 0.22)`;
 }
 
 export function Halo({
@@ -139,14 +174,16 @@ export function Halo({
     };
 
     const padBackground =
-        mode === 'spectrum'
+        !isOn
+            ? 'radial-gradient(circle at 50% 50%, rgba(196, 181, 253, 0.34) 0%, rgba(196, 181, 253, 0.14) 26%, rgba(217, 222, 230, 0.08) 48%, rgba(216, 220, 228, 0) 72%), linear-gradient(145deg, rgba(239, 241, 245, 0.98) 0%, rgba(223, 227, 234, 0.96) 54%, rgba(210, 214, 222, 0.98) 100%)'
+            : mode === 'spectrum'
             ? 'linear-gradient(90deg, #ff6b6b 0%, #ffd166 18%, #95d16f 36%, #56cfe1 54%, #7b6dff 74%, #ff77c8 100%)'
             : 'linear-gradient(90deg, rgba(191, 227, 255, 0.96) 0%, rgba(255, 255, 255, 0.98) 46%, rgba(245, 197, 86, 0.96) 100%)';
 
     const indicatorColor =
         mode === 'spectrum'
             ? `hsl(${hue}, 100%, 50%)`
-            : `hsl(${hue}, ${Math.max(12, saturation)}%, ${Math.max(58, 90 - saturation * 0.18)}%)`;
+            : buildTemperatureIndicatorColor(hue, saturation, brightness);
 
     return (
         <div className="halo">
@@ -160,7 +197,9 @@ export function Halo({
                     onPointerUp={handlePointerUp}
                     onPointerCancel={handlePointerUp}
                     style={{
-                        background: `linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255,255,255,0) 100%), ${padBackground}`,
+                        background: isOn
+                            ? `linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255,255,255,0) 100%), ${padBackground}`
+                            : padBackground,
                     }}
                 >
                     {isOn ? (
@@ -170,6 +209,7 @@ export function Halo({
                                 left: `${xPosFromHueSat(hue, saturation, mode)}%`,
                                 top: `${100 - brightness}%`,
                                 background: indicatorColor,
+                                boxShadow: buildIndicatorShadow(hue, saturation, brightness, mode),
                             }}
                         />
                     ) : null}
