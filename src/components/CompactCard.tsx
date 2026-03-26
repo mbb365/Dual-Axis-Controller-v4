@@ -1,8 +1,13 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import compactCardStyles from './CompactCard.css?inline';
 import { Halo } from './Halo';
 
 export type CardLayout = 'compact' | 'expanded';
+
+export interface SceneOption {
+    entityId: string;
+    name: string;
+}
 
 interface CompactCardProps {
     layout: CardLayout;
@@ -18,7 +23,12 @@ interface CompactCardProps {
     canUseSpectrum: boolean;
     onModeChange: (mode: 'temperature' | 'spectrum') => void;
     onControlsChange: (h: number, s: number, b: number) => void;
+    onControlInteractionStart?: () => void;
+    onControlInteractionEnd?: () => void;
     onToggle: () => void;
+    sceneOptions?: SceneOption[];
+    selectedSceneName?: string | null;
+    onSceneSelect?: (sceneEntityId: string) => void;
     onTapAction?: () => void;
     onHoldAction?: () => void;
     onDoubleTapAction?: () => void;
@@ -82,36 +92,36 @@ function buildCompactBackground(
     uiMode: 'temperature' | 'spectrum'
 ) {
     if (!isOn) {
-        return 'linear-gradient(135deg, rgba(255, 255, 255, 0.72) 0%, rgba(244, 246, 248, 0.88) 44%, rgba(231, 234, 239, 0.94) 100%)';
+        return 'linear-gradient(135deg, rgba(255, 255, 255, 0.7) 0%, rgba(244, 246, 248, 0.8) 42%, rgba(231, 234, 239, 0.62) 72%, rgba(231, 234, 239, 0.2) 100%)';
     }
 
     const intensity = Math.max(0, Math.min(1, brightness / 100));
 
     if (uiMode === 'temperature') {
         const normalizedSaturation = Math.max(0, Math.min(1, saturation / 100));
-        const whiteFocus = `hsla(0, 0%, ${98 - intensity * 1.5}%, ${0.7 - normalizedSaturation * 0.2})`;
-        const softGrey = `hsla(220, 14%, ${91 - intensity * 6}%, ${0.36 + (1 - normalizedSaturation) * 0.18})`;
+        const whiteFocus = `hsla(0, 0%, ${98 - intensity * 1.5}%, ${0.52 - normalizedSaturation * 0.14})`;
+        const softGrey = `hsla(220, 14%, ${91 - intensity * 6}%, ${0.26 + (1 - normalizedSaturation) * 0.14})`;
         const coolOrWarmTint = `hsla(${hue}, ${10 + normalizedSaturation * 34}%, ${84 - intensity * 12}%, ${
-            0.18 + normalizedSaturation * 0.24
+            0.12 + normalizedSaturation * 0.18
         })`;
-        const shadowGrey = `hsla(222, 16%, ${83 - intensity * 10}%, ${0.18 + (1 - normalizedSaturation) * 0.16})`;
+        const shadowGrey = `hsla(222, 16%, ${83 - intensity * 10}%, ${0.14 + (1 - normalizedSaturation) * 0.12})`;
 
-        return `linear-gradient(135deg, ${whiteFocus} 0%, ${whiteFocus} 22%, ${softGrey} 56%, ${coolOrWarmTint} 82%, ${shadowGrey} 100%)`;
+        return `radial-gradient(circle at 18% 28%, ${whiteFocus} 0%, ${whiteFocus} 16%, transparent 44%), linear-gradient(135deg, ${softGrey} 0%, ${coolOrWarmTint} 48%, ${shadowGrey} 76%, transparent 100%)`;
     }
 
     const tintSaturation = Math.max(18, uiMode === 'spectrum' ? saturation : saturation * 0.72 + 18);
     const softTint = `hsla(${hue}, ${Math.max(12, tintSaturation * 0.42)}%, ${98 - intensity * 4}%, ${
-        0.18 + intensity * 0.16
+        0.12 + intensity * 0.12
     })`;
     const midTint = `hsla(${hue}, ${Math.max(18, tintSaturation * 0.7)}%, ${94 - intensity * 10}%, ${
-        0.24 + intensity * 0.18
+        0.18 + intensity * 0.14
     })`;
     const richTint = `hsla(${hue}, ${Math.max(24, tintSaturation)}%, ${86 - intensity * 18}%, ${
-        0.3 + intensity * 0.34
+        0.18 + intensity * 0.22
     })`;
-    const tintReach = 38 + intensity * 24;
+    const tintReach = 34 + intensity * 22;
 
-    return `linear-gradient(135deg, rgba(255, 255, 255, 0.66) 0%, ${softTint} 26%, ${midTint} ${tintReach}%, ${richTint} 100%)`;
+    return `radial-gradient(circle at 16% 26%, ${softTint} 0%, ${softTint} 14%, transparent 42%), linear-gradient(135deg, ${midTint} 0%, ${richTint} ${tintReach}%, transparent 100%)`;
 }
 
 function buildIconBackground(
@@ -157,6 +167,37 @@ function buildIconForeground(
     return '#ffffff';
 }
 
+function buildExpandedBackground(
+    isOn: boolean,
+    hue: number,
+    saturation: number,
+    brightness: number,
+    uiMode: 'temperature' | 'spectrum'
+) {
+    if (!isOn) {
+        return 'linear-gradient(145deg, rgba(255, 255, 255, 0.7) 0%, rgba(244, 247, 251, 0.78) 52%, rgba(233, 237, 242, 0.66) 100%)';
+    }
+
+    const intensity = Math.max(0, Math.min(1, brightness / 100));
+
+    if (uiMode === 'temperature') {
+        const normalizedSaturation = Math.max(0, Math.min(1, saturation / 100));
+        const haloTint = `hsla(${hue}, ${Math.max(6, 12 + normalizedSaturation * 32)}%, ${92 - intensity * 10}%, ${
+            0.112 + normalizedSaturation * 0.112 + intensity * 0.048
+        })`;
+        const whiteGlow = `hsla(0, 0%, ${98 - intensity * 3}%, ${0.336 - normalizedSaturation * 0.096})`;
+        const shadowTone = `hsla(220, 18%, ${92 - intensity * 7}%, ${0.32 - normalizedSaturation * 0.08})`;
+
+        return `radial-gradient(circle at 20% 18%, ${whiteGlow} 0%, ${whiteGlow} 18%, transparent 46%), radial-gradient(circle at 78% 20%, ${haloTint} 0%, transparent 38%), linear-gradient(145deg, rgba(255, 255, 255, 0.42) 0%, ${shadowTone} 56%, rgba(255, 255, 255, 0.12) 100%)`;
+    }
+
+    const tintSaturation = Math.max(20, saturation * 0.72);
+    const ambientGlow = `hsla(${hue}, ${tintSaturation}%, ${72 - intensity * 12}%, ${0.128 + intensity * 0.096})`;
+    const softTint = `hsla(${hue}, ${Math.max(16, tintSaturation * 0.56)}%, ${90 - intensity * 8}%, ${0.112 + intensity * 0.064})`;
+
+    return `radial-gradient(circle at 18% 16%, rgba(255, 255, 255, 0.34) 0%, transparent 36%), radial-gradient(circle at 82% 20%, ${ambientGlow} 0%, transparent 38%), linear-gradient(145deg, rgba(255, 255, 255, 0.36) 0%, ${softTint} 54%, rgba(255, 255, 255, 0.1) 100%)`;
+}
+
 export function CompactCard({
     layout,
     lightName,
@@ -171,7 +212,12 @@ export function CompactCard({
     canUseSpectrum,
     onModeChange,
     onControlsChange,
+    onControlInteractionStart,
+    onControlInteractionEnd,
     onToggle,
+    sceneOptions = [],
+    selectedSceneName,
+    onSceneSelect,
     onTapAction,
     onHoldAction,
     onDoubleTapAction,
@@ -179,6 +225,8 @@ export function CompactCard({
     const holdTimer = useRef<number | null>(null);
     const tapTimer = useRef<number | null>(null);
     const holdTriggered = useRef(false);
+    const sceneDropdownRef = useRef<HTMLDivElement>(null);
+    const [isSceneMenuOpen, setIsSceneMenuOpen] = useState(false);
 
     useEffect(() => {
         return () => {
@@ -186,6 +234,30 @@ export function CompactCard({
             if (tapTimer.current) window.clearTimeout(tapTimer.current);
         };
     }, []);
+
+    useEffect(() => {
+        if (!isSceneMenuOpen) return;
+
+        const handlePointerDown = (event: PointerEvent) => {
+            if (!sceneDropdownRef.current?.contains(event.target as Node)) {
+                setIsSceneMenuOpen(false);
+            }
+        };
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setIsSceneMenuOpen(false);
+            }
+        };
+
+        document.addEventListener('pointerdown', handlePointerDown);
+        document.addEventListener('keydown', handleKeyDown);
+
+        return () => {
+            document.removeEventListener('pointerdown', handlePointerDown);
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [isSceneMenuOpen]);
 
     const leadingValue =
         uiMode === 'temperature' && kelvin ? `${kelvin.toLocaleString()}K` : getRgbText(hue, saturation, brightness);
@@ -302,7 +374,18 @@ export function CompactCard({
     }
 
     return (
-        <div className="dual-card dual-card--expanded">
+        <div
+            className="dual-card dual-card--expanded"
+            style={{
+                background: buildExpandedBackground(isOn, hue, saturation, brightness, uiMode),
+                border: '1px solid rgba(255, 255, 255, 0.38)',
+                borderRadius: '22px',
+                padding: '16px',
+                boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.46)',
+                backdropFilter: 'blur(16px) saturate(140%)',
+                WebkitBackdropFilter: 'blur(16px) saturate(140%)',
+            }}
+        >
             <style>{compactCardStyles}</style>
             <div className="dual-card__expanded-title">{lightName}</div>
 
@@ -321,6 +404,8 @@ export function CompactCard({
                 brightness={brightness}
                 isOn={isOn}
                 onChange={onControlsChange}
+                onInteractionStart={onControlInteractionStart}
+                onInteractionEnd={onControlInteractionEnd}
                 onToggle={onToggle}
                 mode={uiMode}
             />
@@ -351,6 +436,37 @@ export function CompactCard({
                 >
                     Temperature
                 </button>
+            </div>
+
+            <div className="dual-card__scene-picker" ref={sceneDropdownRef}>
+                <button
+                    type="button"
+                    className={`dual-card__scene-trigger ${isSceneMenuOpen ? 'is-open' : ''}`}
+                    disabled={!sceneOptions.length}
+                    aria-expanded={isSceneMenuOpen}
+                    onClick={() => setIsSceneMenuOpen((current) => !current)}
+                >
+                    <span>{sceneOptions.length ? (selectedSceneName ?? 'Scenes') : 'No scenes available'}</span>
+                    <ha-icon icon={isSceneMenuOpen ? 'mdi:chevron-up' : 'mdi:chevron-down'} className="dual-card__scene-icon" />
+                </button>
+
+                {isSceneMenuOpen && sceneOptions.length ? (
+                    <div className="dual-card__scene-menu">
+                        {sceneOptions.map((scene) => (
+                            <button
+                                key={scene.entityId}
+                                type="button"
+                                className="dual-card__scene-option"
+                                onClick={() => {
+                                    setIsSceneMenuOpen(false);
+                                    onSceneSelect?.(scene.entityId);
+                                }}
+                            >
+                                {scene.name}
+                            </button>
+                        ))}
+                    </div>
+                ) : null}
             </div>
         </div>
     );

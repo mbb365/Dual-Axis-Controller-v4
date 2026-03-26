@@ -70,9 +70,9 @@ class DualControllerCard extends HTMLElement {
 
         return {
             rows: 1,
-            columns: 3,
+            columns: 4,
             min_rows: 1,
-            min_columns: 2,
+            min_columns: 3,
         };
     }
 

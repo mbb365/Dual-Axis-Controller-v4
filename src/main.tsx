@@ -2,6 +2,53 @@ import { createRoot } from 'react-dom/client';
 import { useMemo, useState } from 'react';
 import { CardApp } from './App';
 
+const demoScenes = {
+    'scene.preview_focus': {
+        friendly_name: 'Focus Beam',
+        state: 'on' as const,
+        attributes: {
+            brightness: 255,
+            color_mode: 'color_temp',
+            color_temp: 176,
+            color_temp_kelvin: 5680,
+            hs_color: [210, 28] as [number, number],
+        },
+    },
+    'scene.preview_sunset': {
+        friendly_name: 'Sunset Glow',
+        state: 'on' as const,
+        attributes: {
+            brightness: 204,
+            color_mode: 'color_temp',
+            color_temp: 435,
+            color_temp_kelvin: 2299,
+            hs_color: [32, 74] as [number, number],
+        },
+    },
+    'scene.preview_aurora': {
+        friendly_name: 'Aurora Pop',
+        state: 'on' as const,
+        attributes: {
+            brightness: 230,
+            color_mode: 'hs',
+            color_temp: null as unknown as number,
+            color_temp_kelvin: null as unknown as number,
+            hs_color: [164, 78] as [number, number],
+        },
+    },
+    'scene.preview_midnight': {
+        friendly_name: 'Midnight Violet',
+        state: 'on' as const,
+        attributes: {
+            brightness: 122,
+            color_mode: 'hs',
+            color_temp: null as unknown as number,
+            color_temp_kelvin: null as unknown as number,
+            hs_color: [282, 72] as [number, number],
+        },
+    },
+} as const;
+
 function MockHomeAssistant() {
     const [mockState, setMockState] = useState({
         state: 'on',
@@ -22,8 +69,38 @@ function MockHomeAssistant() {
         () => ({
             states: {
                 'light.preview': mockState,
+                ...Object.fromEntries(
+                    Object.entries(demoScenes).map(([entityId, scene]) => [
+                        entityId,
+                        {
+                            state: scene.state,
+                            attributes: {
+                                friendly_name: scene.friendly_name,
+                            },
+                        },
+                    ])
+                ),
             },
             callService: async (domain: string, service: string, serviceData: Record<string, unknown>) => {
+                if (domain === 'scene' && service === 'turn_on' && typeof serviceData.entity_id === 'string') {
+                    const selectedScene = demoScenes[serviceData.entity_id as keyof typeof demoScenes];
+                    if (!selectedScene) return;
+
+                    setMockState((previous) => ({
+                        ...previous,
+                        state: selectedScene.state,
+                        attributes: {
+                            ...previous.attributes,
+                            brightness: selectedScene.attributes.brightness,
+                            color_mode: selectedScene.attributes.color_mode,
+                            color_temp: selectedScene.attributes.color_temp,
+                            color_temp_kelvin: selectedScene.attributes.color_temp_kelvin,
+                            hs_color: selectedScene.attributes.hs_color,
+                        },
+                    }));
+                    return;
+                }
+
                 if (domain !== 'light') return;
 
                 setMockState((previous) => {

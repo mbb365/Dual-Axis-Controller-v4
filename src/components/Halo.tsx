@@ -7,8 +7,25 @@ interface HaloProps {
     brightness: number;
     isOn: boolean;
     onChange: (h: number, s: number, b: number) => void;
+    onInteractionStart?: () => void;
+    onInteractionEnd?: () => void;
     onToggle: () => void;
     mode: 'temperature' | 'spectrum';
+}
+
+interface HaloSelection {
+    brightness: number;
+    hue: number;
+    saturation: number;
+    xPercent: number;
+    yPercent: number;
+}
+
+interface HaloPulse {
+    color: string;
+    id: number;
+    xPercent: number;
+    yPercent: number;
 }
 
 const HALO_CSS = `
@@ -20,6 +37,7 @@ const HALO_CSS = `
     position: relative;
     width: 100%;
     aspect-ratio: 1 / 1;
+    overflow: visible;
 }
 
 .halo__pad {
@@ -27,10 +45,119 @@ const HALO_CSS = `
     inset: 0;
     border-radius: 18px;
     overflow: hidden;
+    background-color: rgba(245, 247, 250, 0.96);
     cursor: crosshair;
     touch-action: none;
     border: 1px solid rgba(15, 23, 42, 0.08);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 3px 8px rgba(15, 23, 42, 0.08);
+    transition:
+        border-radius 340ms cubic-bezier(0.22, 0.68, 0.2, 1),
+        transform 340ms cubic-bezier(0.22, 0.68, 0.2, 1),
+        box-shadow 340ms cubic-bezier(0.22, 0.68, 0.2, 1);
+}
+
+.halo__pad::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+        linear-gradient(rgba(99, 115, 148, 0.14) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(99, 115, 148, 0.14) 1px, transparent 1px);
+    background-size: 28px 28px;
+    background-position: center center;
+    opacity: 0.5;
+    -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.22) 42%, rgba(0, 0, 0, 0.8) 72%, rgba(0, 0, 0, 1) 100%);
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.22) 42%, rgba(0, 0, 0, 0.8) 72%, rgba(0, 0, 0, 1) 100%);
+    pointer-events: none;
+    transition:
+        opacity 280ms ease,
+        -webkit-mask-image 340ms cubic-bezier(0.22, 0.68, 0.2, 1),
+        mask-image 340ms cubic-bezier(0.22, 0.68, 0.2, 1);
+}
+
+.halo__pad::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.1) 0%, rgba(240, 244, 249, 0.06) 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    pointer-events: none;
+}
+
+.halo__pulse {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.halo__pulse::before,
+.halo__pulse::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    border-radius: 999px;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+.halo__pulse::before {
+    width: 96px;
+    height: 96px;
+    background:
+        radial-gradient(circle, color-mix(in srgb, var(--halo-pulse-color) 36%, white 64%) 0%, color-mix(in srgb, var(--halo-pulse-color) 21%, white 79%) 24%, rgba(255, 255, 255, 0.09) 52%, rgba(255, 255, 255, 0) 100%);
+    opacity: 0;
+    filter: blur(13px);
+    animation: halo-bloom 820ms cubic-bezier(0.16, 0.72, 0.2, 1) forwards;
+}
+
+.halo__pulse::after {
+    width: 24px;
+    height: 24px;
+    border: 1.5px solid color-mix(in srgb, var(--halo-pulse-color) 44%, white 56%);
+    box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.28),
+        0 0 20px color-mix(in srgb, var(--halo-pulse-color) 24%, transparent 76%);
+    opacity: 0;
+    animation: halo-ripple 980ms cubic-bezier(0.18, 0.72, 0.2, 1) forwards;
+}
+
+@keyframes halo-bloom {
+    0% {
+        opacity: 0.68;
+        transform: translate(-50%, -50%) scale(0.32);
+    }
+
+    38% {
+        opacity: 0.4;
+        transform: translate(-50%, -50%) scale(0.88);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(1.16);
+    }
+}
+
+@keyframes halo-ripple {
+    0% {
+        opacity: 0.44;
+        transform: translate(-50%, -50%) scale(0.56);
+    }
+
+    46% {
+        opacity: 0.22;
+        transform: translate(-50%, -50%) scale(1.74);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(2.84);
+    }
 }
 
 .halo__pad.is-off {
@@ -52,6 +179,11 @@ const HALO_CSS = `
     border: 4px solid rgba(255, 255, 255, 0.98);
     box-shadow: 0 4px 14px rgba(15, 23, 42, 0.2);
     pointer-events: none;
+    z-index: 3;
+    transition:
+        left 340ms cubic-bezier(0.22, 0.68, 0.2, 1),
+        top 340ms cubic-bezier(0.22, 0.68, 0.2, 1),
+        box-shadow 220ms ease;
 }
 
 @container (max-width: 420px) {
@@ -116,14 +248,18 @@ export function Halo({
     brightness,
     isOn,
     onChange,
+    onInteractionStart,
+    onInteractionEnd,
     onToggle,
     mode,
 }: HaloProps) {
     const trackpadRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
+    const [pulse, setPulse] = useState<HaloPulse | null>(null);
+    const pulseIdRef = useRef(0);
 
-    const updateFromPosition = (event: React.PointerEvent) => {
-        if (!trackpadRef.current) return;
+    const selectionFromPosition = (event: React.PointerEvent): HaloSelection | null => {
+        if (!trackpadRef.current) return null;
 
         const rect = trackpadRef.current.getBoundingClientRect();
         let xPercent = (event.clientX - rect.left) / rect.width;
@@ -146,8 +282,36 @@ export function Halo({
             nextSaturation = Math.round((xPercent - 0.5) * 200);
         }
 
-        const nextBrightness = Math.round((1 - yPercent) * 100);
-        onChange(nextHue, nextSaturation, nextBrightness);
+        return {
+            brightness: Math.round((1 - yPercent) * 100),
+            hue: nextHue,
+            saturation: nextSaturation,
+            xPercent: xPercent * 100,
+            yPercent: yPercent * 100,
+        };
+    };
+
+    const triggerPulse = ({ xPercent, yPercent, hue: nextHue, saturation: nextSaturation, brightness: nextBrightness }: HaloSelection) => {
+        pulseIdRef.current += 1;
+        const color =
+            mode === 'spectrum'
+                ? `hsl(${nextHue}, 100%, 50%)`
+                : buildTemperatureIndicatorColor(nextHue, nextSaturation, nextBrightness);
+
+        setPulse({
+            color,
+            id: pulseIdRef.current,
+            xPercent,
+            yPercent,
+        });
+    };
+
+    const updateFromPosition = (event: React.PointerEvent) => {
+        const selection = selectionFromPosition(event);
+        if (!selection) return;
+
+        onChange(selection.hue, selection.saturation, selection.brightness);
+        return selection;
     };
 
     const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -157,8 +321,12 @@ export function Halo({
         }
 
         setIsDragging(true);
+        onInteractionStart?.();
         event.currentTarget.setPointerCapture(event.pointerId);
-        updateFromPosition(event);
+        const selection = updateFromPosition(event);
+        if (selection) {
+            triggerPulse(selection);
+        }
     };
 
     const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -169,6 +337,7 @@ export function Halo({
     const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
         if (isDragging) {
             event.currentTarget.releasePointerCapture(event.pointerId);
+            onInteractionEnd?.();
         }
         setIsDragging(false);
     };
@@ -177,8 +346,8 @@ export function Halo({
         !isOn
             ? 'radial-gradient(circle at 50% 50%, rgba(196, 181, 253, 0.34) 0%, rgba(196, 181, 253, 0.14) 26%, rgba(217, 222, 230, 0.08) 48%, rgba(216, 220, 228, 0) 72%), linear-gradient(145deg, rgba(239, 241, 245, 0.98) 0%, rgba(223, 227, 234, 0.96) 54%, rgba(210, 214, 222, 0.98) 100%)'
             : mode === 'spectrum'
-            ? 'linear-gradient(90deg, #ff6b6b 0%, #ffd166 18%, #95d16f 36%, #56cfe1 54%, #7b6dff 74%, #ff77c8 100%)'
-            : 'linear-gradient(90deg, rgba(191, 227, 255, 0.96) 0%, rgba(255, 255, 255, 0.98) 46%, rgba(245, 197, 86, 0.96) 100%)';
+            ? 'radial-gradient(circle at 14% 18%, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.08) 14%, rgba(255, 255, 255, 0) 34%), linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.14) 62%, rgba(250, 251, 253, 0.82) 100%), linear-gradient(90deg, rgba(255, 107, 107, 0.96) 0%, rgba(255, 209, 102, 0.86) 18%, rgba(149, 209, 111, 0.84) 36%, rgba(86, 207, 225, 0.82) 54%, rgba(123, 109, 255, 0.84) 74%, rgba(255, 119, 200, 0.92) 100%)'
+            : 'radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.16) 15%, rgba(255, 255, 255, 0) 38%), linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.14) 62%, rgba(250, 251, 253, 0.84) 100%), linear-gradient(90deg, rgba(101, 175, 239, 0.94) 0%, rgba(222, 236, 247, 0.7) 48%, rgba(255, 214, 84, 0.92) 100%)';
 
     const indicatorColor =
         mode === 'spectrum'
@@ -197,23 +366,36 @@ export function Halo({
                     onPointerUp={handlePointerUp}
                     onPointerCancel={handlePointerUp}
                     style={{
-                        background: isOn
-                            ? `linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255,255,255,0) 100%), ${padBackground}`
-                            : padBackground,
+                        background: padBackground,
+                        ['--halo-active-color' as string]: indicatorColor,
                     }}
                 >
-                    {isOn ? (
-                        <div
-                            className="halo__indicator"
-                            style={{
-                                left: `${xPosFromHueSat(hue, saturation, mode)}%`,
-                                top: `${100 - brightness}%`,
-                                background: indicatorColor,
-                                boxShadow: buildIndicatorShadow(hue, saturation, brightness, mode),
-                            }}
-                        />
-                    ) : null}
                 </div>
+                {pulse ? (
+                    <div
+                        key={pulse.id}
+                        className="halo__pulse"
+                        onAnimationEnd={() => {
+                            setPulse((currentPulse) => (currentPulse?.id === pulse.id ? null : currentPulse));
+                        }}
+                        style={{
+                            left: `${pulse.xPercent}%`,
+                            top: `${pulse.yPercent}%`,
+                            ['--halo-pulse-color' as string]: pulse.color,
+                        }}
+                    />
+                ) : null}
+                {isOn ? (
+                    <div
+                        className="halo__indicator"
+                        style={{
+                            left: `${xPosFromHueSat(hue, saturation, mode)}%`,
+                            top: `${100 - brightness}%`,
+                            background: indicatorColor,
+                            boxShadow: buildIndicatorShadow(hue, saturation, brightness, mode),
+                        }}
+                    />
+                ) : null}
             </div>
         </div>
     );

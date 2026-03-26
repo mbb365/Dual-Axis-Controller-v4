@@ -1,6 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CompactCard, type CardLayout } from './components/CompactCard';
+import { CompactCard, type CardLayout, type SceneOption } from './components/CompactCard';
 import { callLightService, getLightState } from './services/ha-connection';
+
+const CONTROL_SEND_INTERVAL_MS = 90;
+const CONTROL_SETTLE_DELAY_MS = 220;
+
+interface QueuedControlCommand {
+    turnOn: boolean;
+    brightness: number;
+    hue: number;
+    saturation: number;
+    uiMode: 'temperature' | 'spectrum';
+    colorTempKelvin?: number;
+    hsColor?: [number, number];
+}
 
 export interface CardAppProps {
     hass: any;
@@ -23,6 +36,15 @@ export function CardApp({
     onHoldAction,
     onDoubleTapAction,
 }: CardAppProps) {
+    const allStates = (hass?.states ?? {}) as Record<
+        string,
+        {
+            state?: string;
+            attributes?: {
+                friendly_name?: string;
+            };
+        }
+    >;
     const light = getLightState(hass, entityId);
     const lightName = name || light?.attributes.friendly_name || entityId;
     const supportedColorModes = light?.attributes.supported_color_modes || [];
@@ -34,11 +56,21 @@ export function CardApp({
     const supportsSpectrum =
         supportedColorModes.some((mode) => ['hs', 'xy', 'rgb', 'rgbw', 'rgbww'].includes(mode)) ||
         (light?.attributes.hs_color != null && light?.attributes.color_mode !== 'color_temp');
+    const sceneOptions: SceneOption[] = Object.entries(allStates)
+        .filter(([sceneEntityId, sceneState]) => sceneEntityId.startsWith('scene.') && sceneState?.state !== 'unavailable')
+        .map(([sceneEntityId, sceneState]) => ({
+            entityId: sceneEntityId,
+            name: sceneState.attributes?.friendly_name || sceneEntityId.replace(/^scene\./, '').replace(/_/g, ' '),
+        }))
+        .sort((left, right) => left.name.localeCompare(right.name));
 
     const rootRef = useRef<HTMLDivElement>(null);
     const lastCommandTime = useRef(0);
     const isUserInteracting = useRef(false);
     const interactionTimeout = useRef<number | null>(null);
+    const controlSendTimeout = useRef<number | null>(null);
+    const pendingControlCommand = useRef<QueuedControlCommand | null>(null);
+    const lastSentControlCommand = useRef<QueuedControlCommand | null>(null);
 
     const [containerWidth, setContainerWidth] = useState(0);
     const [hue, setHue] = useState(0);
@@ -47,6 +79,7 @@ export function CardApp({
     const [kelvin, setKelvin] = useState<number | null>(null);
     const [isOn, setIsOn] = useState(false);
     const [uiMode, setUiMode] = useState<'temperature' | 'spectrum'>('temperature');
+    const [selectedSceneName, setSelectedSceneName] = useState<string | null>(null);
     const [showPopup, setShowPopup] = useState(false);
 
     useEffect(() => {
@@ -68,6 +101,9 @@ export function CardApp({
         return () => {
             if (interactionTimeout.current) {
                 window.clearTimeout(interactionTimeout.current);
+            }
+            if (controlSendTimeout.current) {
+                window.clearTimeout(controlSendTimeout.current);
             }
         };
     }, []);
@@ -156,20 +192,116 @@ export function CardApp({
         }, delayMs);
     }, []);
 
+    const clearInteractionLock = useCallback(() => {
+        isUserInteracting.current = false;
+        if (interactionTimeout.current) {
+            window.clearTimeout(interactionTimeout.current);
+            interactionTimeout.current = null;
+        }
+    }, []);
+
+    const beginControlInteraction = useCallback(() => {
+        isUserInteracting.current = true;
+        if (interactionTimeout.current) {
+            window.clearTimeout(interactionTimeout.current);
+            interactionTimeout.current = null;
+        }
+    }, []);
+
+    const endControlInteraction = useCallback(() => {
+        if (interactionTimeout.current) {
+            window.clearTimeout(interactionTimeout.current);
+        }
+        interactionTimeout.current = window.setTimeout(() => {
+            isUserInteracting.current = false;
+            interactionTimeout.current = null;
+        }, CONTROL_SETTLE_DELAY_MS);
+    }, []);
+
+    const hasMeaningfulControlDelta = useCallback(
+        (left: QueuedControlCommand | null, right: QueuedControlCommand) => {
+            if (!left) return true;
+            if (left.turnOn !== right.turnOn || left.uiMode !== right.uiMode) return true;
+            if (Math.abs(left.brightness - right.brightness) >= 1) return true;
+
+            if (right.colorTempKelvin !== undefined || left.colorTempKelvin !== undefined) {
+                return Math.abs((left.colorTempKelvin ?? 0) - (right.colorTempKelvin ?? 0)) >= 18;
+            }
+
+            if (right.hsColor || left.hsColor) {
+                const [leftHue, leftSat] = left.hsColor ?? [left.hue, left.saturation];
+                const [rightHue, rightSat] = right.hsColor ?? [right.hue, right.saturation];
+                return Math.abs(leftHue - rightHue) >= 2 || Math.abs(leftSat - rightSat) >= 2;
+            }
+
+            return Math.abs(left.hue - right.hue) >= 2 || Math.abs(left.saturation - right.saturation) >= 2;
+        },
+        []
+    );
+
+    const flushQueuedControlCommand = useCallback(
+        (force = false) => {
+            const queuedCommand = pendingControlCommand.current;
+            if (!queuedCommand) return;
+
+            const now = Date.now();
+            const timeUntilNextSend = CONTROL_SEND_INTERVAL_MS - (now - lastCommandTime.current);
+            if (!force && timeUntilNextSend > 0) {
+                if (!controlSendTimeout.current) {
+                    controlSendTimeout.current = window.setTimeout(() => {
+                        controlSendTimeout.current = null;
+                        flushQueuedControlCommand(true);
+                    }, timeUntilNextSend);
+                }
+                return;
+            }
+
+            if (controlSendTimeout.current) {
+                window.clearTimeout(controlSendTimeout.current);
+                controlSendTimeout.current = null;
+            }
+
+            if (!hasMeaningfulControlDelta(lastSentControlCommand.current, queuedCommand)) {
+                pendingControlCommand.current = null;
+                return;
+            }
+
+            pendingControlCommand.current = null;
+            lastSentControlCommand.current = queuedCommand;
+            lastCommandTime.current = now;
+
+            void callLightService(hass, entityId, queuedCommand.turnOn, {
+                brightness: queuedCommand.brightness,
+                hs_color: queuedCommand.hsColor,
+                color_temp_kelvin: queuedCommand.colorTempKelvin,
+            });
+        },
+        [entityId, hass, hasMeaningfulControlDelta]
+    );
+
+    const queueControlCommand = useCallback(
+        (command: QueuedControlCommand) => {
+            pendingControlCommand.current = command;
+            flushQueuedControlCommand(false);
+        },
+        [flushQueuedControlCommand]
+    );
+
     const handleControlsChange = useCallback(
         (nextHue: number, nextSaturation: number, nextBrightness: number) => {
-            markInteraction(500);
+            beginControlInteraction();
 
+            setSelectedSceneName(null);
             setHue(nextHue);
             setSaturation(nextSaturation);
             setBrightness(nextBrightness);
 
-            const now = Date.now();
-            if (now - lastCommandTime.current < 200) return;
-            lastCommandTime.current = now;
-
-            const serviceParams: Record<string, unknown> = {
+            const nextCommand: QueuedControlCommand = {
+                turnOn: nextBrightness > 0,
                 brightness: nextBrightness,
+                hue: nextHue,
+                saturation: nextSaturation,
+                uiMode,
             };
 
             if (uiMode === 'temperature') {
@@ -182,30 +314,36 @@ export function CardApp({
                 setKelvin(nextKelvin);
 
                 if (supportsTemperature) {
-                    serviceParams.color_temp_kelvin = nextKelvin;
+                    nextCommand.colorTempKelvin = nextKelvin;
                 } else if (supportsSpectrum) {
-                    serviceParams.hs_color = [nextHue, nextSaturation];
+                    nextCommand.hsColor = [nextHue, nextSaturation];
                 }
             } else if (supportsSpectrum) {
-                serviceParams.hs_color = [nextHue, nextSaturation];
+                nextCommand.hsColor = [nextHue, nextSaturation];
             }
 
-            callLightService(hass, entityId, nextBrightness > 0, serviceParams);
+            queueControlCommand(nextCommand);
         },
         [
+            beginControlInteraction,
             entityId,
-            hass,
             light?.attributes.max_mireds,
             light?.attributes.min_mireds,
-            markInteraction,
+            queueControlCommand,
             supportsSpectrum,
             supportsTemperature,
             uiMode,
         ]
     );
 
+    const handleControlInteractionEnd = useCallback(() => {
+        flushQueuedControlCommand(true);
+        endControlInteraction();
+    }, [endControlInteraction, flushQueuedControlCommand]);
+
     const handleToggle = useCallback(() => {
         const nextState = !isOn;
+        setSelectedSceneName(null);
         setIsOn(nextState);
         markInteraction(1000);
         callLightService(hass, entityId, nextState);
@@ -216,10 +354,21 @@ export function CardApp({
             if (mode === 'temperature' && !supportsTemperature) return;
             if (mode === 'spectrum' && !supportsSpectrum) return;
 
+            setSelectedSceneName(null);
             setUiMode(mode);
             markInteraction(1000);
         },
         [markInteraction, supportsSpectrum, supportsTemperature]
+    );
+
+    const handleSceneSelect = useCallback(
+        (sceneEntityId: string) => {
+            clearInteractionLock();
+            const selectedScene = sceneOptions.find((scene) => scene.entityId === sceneEntityId);
+            setSelectedSceneName(selectedScene?.name ?? null);
+            hass.callService('scene', 'turn_on', { entity_id: sceneEntityId });
+        },
+        [clearInteractionLock, hass, sceneOptions]
     );
 
     const handleTap = useCallback(() => {
@@ -271,7 +420,12 @@ export function CardApp({
                 canUseSpectrum={supportsSpectrum}
                 onModeChange={handleModeChange}
                 onControlsChange={handleControlsChange}
+                onControlInteractionStart={beginControlInteraction}
+                onControlInteractionEnd={handleControlInteractionEnd}
                 onToggle={handleToggle}
+                sceneOptions={sceneOptions}
+                selectedSceneName={selectedSceneName}
+                onSceneSelect={handleSceneSelect}
                 onTapAction={handleTap}
                 onHoldAction={onHoldAction}
                 onDoubleTapAction={onDoubleTapAction}
@@ -317,7 +471,12 @@ export function CardApp({
                             canUseSpectrum={supportsSpectrum}
                             onModeChange={handleModeChange}
                             onControlsChange={handleControlsChange}
+                            onControlInteractionStart={beginControlInteraction}
+                            onControlInteractionEnd={handleControlInteractionEnd}
                             onToggle={handleToggle}
+                            sceneOptions={sceneOptions}
+                            selectedSceneName={selectedSceneName}
+                            onSceneSelect={handleSceneSelect}
                         />
                     </div>
                 </div>
