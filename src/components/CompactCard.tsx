@@ -28,6 +28,7 @@ interface CompactCardProps {
     onToggle: () => void;
     sceneOptions?: SceneOption[];
     selectedSceneName?: string | null;
+    sceneFeedbackMessage?: string | null;
     onSceneSelect?: (sceneEntityId: string) => void;
     onTapAction?: () => void;
     onHoldAction?: () => void;
@@ -186,6 +187,7 @@ export function CompactCard({
     onToggle,
     sceneOptions = [],
     selectedSceneName,
+    sceneFeedbackMessage,
     onSceneSelect,
     onTapAction,
     onHoldAction,
@@ -423,6 +425,12 @@ export function CompactCard({
                                 {scene.name}
                             </button>
                         ))}
+                    </div>
+                ) : null}
+
+                {sceneFeedbackMessage ? (
+                    <div className="dual-card__scene-feedback" role="status">
+                        {sceneFeedbackMessage}
                     </div>
                 ) : null}
             </div>

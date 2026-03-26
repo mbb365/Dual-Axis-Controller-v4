@@ -61,13 +61,13 @@ const HALO_CSS = `
     position: absolute;
     inset: 0;
     background-image:
-        linear-gradient(rgba(99, 115, 148, 0.14) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(99, 115, 148, 0.14) 1px, transparent 1px);
-    background-size: 28px 28px;
+        linear-gradient(rgba(99, 115, 148, 0.3) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(99, 115, 148, 0.3) 1px, transparent 1px);
+    background-size: 24px 24px;
     background-position: center center;
-    opacity: 0.5;
-    -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.22) 42%, rgba(0, 0, 0, 0.8) 72%, rgba(0, 0, 0, 1) 100%);
-    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.22) 42%, rgba(0, 0, 0, 0.8) 72%, rgba(0, 0, 0, 1) 100%);
+    opacity: 0.9;
+    -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.38) 26%, rgba(0, 0, 0, 0.94) 60%, rgba(0, 0, 0, 1) 100%);
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.38) 26%, rgba(0, 0, 0, 0.94) 60%, rgba(0, 0, 0, 1) 100%);
     pointer-events: none;
     transition:
         opacity 280ms ease,

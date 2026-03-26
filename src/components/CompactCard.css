@@ -31,11 +31,11 @@
     position: absolute;
     inset: 0;
     background-image:
-        linear-gradient(rgba(77, 91, 124, 0.08) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(77, 91, 124, 0.08) 1px, transparent 1px);
-    background-size: 18px 18px;
+        linear-gradient(rgba(77, 91, 124, 0.12) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(77, 91, 124, 0.12) 1px, transparent 1px);
+    background-size: 16px 16px;
     background-position: center center;
-    opacity: 0.42;
+    opacity: 0.52;
     pointer-events: none;
 }
 
@@ -162,31 +162,46 @@
 
 .dual-card__mode-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 36px minmax(0, 1fr);
-    gap: 10px;
-    margin-top: 12px;
+    grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr);
+    gap: 12px;
+    margin-top: 20px;
     align-items: center;
 }
 
+.dual-card__mode-pill,
+.dual-card__power-pill,
+.dual-card__scene-trigger,
+.dual-card__scene-option {
+    appearance: none;
+    -webkit-appearance: none;
+    background: #ffffff;
+    color: #545454;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
 .dual-card__mode-pill {
-    min-height: 36px;
+    position: relative;
+    z-index: 1;
+    isolation: isolate;
+    min-height: 42px;
     border-radius: 999px;
-    border: 1px solid rgba(17, 24, 39, 0.22);
-    background: rgba(255, 255, 255, 0.14);
-    color: #1f2937;
+    border: 1px solid #b7c0cb;
+    background: #ffffff;
+    color: #2f3746;
     font: inherit;
-    font-size: 0.95rem;
+    font-size: 0.92rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    padding: 0 18px;
     cursor: pointer;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.56);
-    backdrop-filter: blur(12px) saturate(130%);
-    -webkit-backdrop-filter: blur(12px) saturate(130%);
-    transition: border-color 0.18s ease, transform 0.18s ease, opacity 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+    transition: border-color 0.18s ease, transform 0.18s ease, opacity 0.18s ease, background 0.18s ease, color 0.18s ease;
 }
 
 .dual-card__mode-pill.is-active {
-    border-color: rgba(17, 24, 39, 0.34);
-    background: rgba(255, 255, 255, 0.18);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.66);
+    border-color: #a8b2bf;
+    background: #ffffff;
 }
 
 .dual-card__mode-pill:disabled {
@@ -199,30 +214,25 @@
 }
 
 .dual-card__power-pill {
-    width: 36px;
-    height: 36px;
+    position: relative;
+    z-index: 1;
+    isolation: isolate;
+    width: 44px;
+    height: 44px;
     border-radius: 999px;
-    border: 1px solid rgba(17, 24, 39, 0.22);
-    background: rgba(255, 255, 255, 0.14);
-    color: rgba(51, 65, 85, 0.9);
+    border: 1px solid #b7c0cb;
+    background: #ffffff;
+    color: #2f3746;
     display: grid;
     place-items: center;
     padding: 0;
     cursor: pointer;
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.62),
-        0 5px 11px rgba(15, 23, 42, 0.036);
-    backdrop-filter: blur(12px) saturate(130%);
-    -webkit-backdrop-filter: blur(12px) saturate(130%);
     transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
 
 .dual-card__power-pill.is-active {
-    border-color: rgba(17, 24, 39, 0.34);
-    color: rgba(31, 41, 55, 0.92);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.7),
-        0 6px 12px rgba(15, 23, 42, 0.048);
+    border-color: #a8b2bf;
+    color: #434343;
 }
 
 .dual-card__power-pill:hover {
@@ -235,7 +245,7 @@
 }
 
 .dual-card__power-icon {
-    --mdc-icon-size: 18px;
+    --mdc-icon-size: 20px;
 }
 
 .dual-card__scene-picker {
@@ -244,31 +254,33 @@
 }
 
 .dual-card__scene-trigger {
+    position: relative;
+    z-index: 1;
+    isolation: isolate;
     width: 100%;
-    min-height: 36px;
-    border-radius: 18px;
-    border: 1px solid rgba(17, 24, 39, 0.22);
-    background: rgba(255, 255, 255, 0.14);
-    color: #1f2937;
+    min-height: 46px;
+    border-radius: 999px;
+    border: 1px solid #b7c0cb;
+    background: #ffffff;
+    color: #2f3746;
     font: inherit;
-    font-size: 0.95rem;
+    font-size: 0.94rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 8px 14px;
+    padding: 0 18px;
     cursor: pointer;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.56);
-    backdrop-filter: blur(12px) saturate(130%);
-    -webkit-backdrop-filter: blur(12px) saturate(130%);
-    transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+    transition: border-color 0.18s ease, transform 0.18s ease, opacity 0.18s ease, background 0.18s ease;
 }
 
 .dual-card__scene-trigger.is-open,
 .dual-card__scene-trigger:not(:disabled):hover {
     transform: translateY(-1px);
-    border-color: rgba(17, 24, 39, 0.34);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.64);
+    border-color: #a8b2bf;
+    background: #ffffff;
 }
 
 .dual-card__scene-trigger:disabled {
@@ -283,7 +295,10 @@
 
 .dual-card__scene-icon {
     --mdc-icon-size: 18px;
+    color: inherit;
     flex-shrink: 0;
+    position: relative;
+    z-index: 1;
 }
 
 .dual-card__scene-menu {
@@ -296,32 +311,28 @@
     gap: 6px;
     padding: 8px;
     border-radius: 18px;
-    border: 1px solid rgba(17, 24, 39, 0.12);
-    background: linear-gradient(145deg, rgba(255, 255, 255, 0.9) 0%, rgba(244, 247, 252, 0.84) 100%);
+    border: 1px solid rgba(188, 196, 207, 0.72);
+    background: #ffffff;
     box-shadow:
-        0 14px 32px rgba(15, 23, 42, 0.12),
-        inset 0 1px 0 rgba(255, 255, 255, 0.7);
-    backdrop-filter: blur(14px) saturate(135%);
-    -webkit-backdrop-filter: blur(14px) saturate(135%);
+        0 10px 22px rgba(15, 23, 42, 0.06);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
 }
 
 .dual-card__scene-option {
-    min-height: 36px;
+    min-height: 40px;
     border: 0;
-    border-radius: 14px;
-    background: rgba(255, 255, 255, 0.12);
-    color: #1f2937;
+    border-radius: 18px;
     font: inherit;
-    font-size: 0.94rem;
+    font-size: 0.92rem;
     text-align: left;
     padding: 8px 12px;
     cursor: pointer;
-    box-shadow: none;
-    transition: background 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+    transition: background 0.18s ease, transform 0.18s ease, color 0.18s ease;
 }
 
 .dual-card__scene-option:hover {
-    background: rgba(255, 255, 255, 0.18);
+    background: rgba(248, 250, 252, 1);
     box-shadow: none;
     transform: translateY(-1px);
 }
@@ -329,6 +340,14 @@
 .dual-card__scene-option:focus-visible {
     outline: 2px solid var(--primary-color, #03a9f4);
     outline-offset: 2px;
+}
+
+.dual-card__scene-feedback {
+    margin-top: 8px;
+    padding: 0 4px;
+    font-size: 0.8rem;
+    line-height: 1.35;
+    color: #b42318;
 }
 
 @container (max-width: 380px) {
@@ -408,30 +427,6 @@
             0 4px 10px rgba(0, 0, 0, 0.18);
     }
 
-    .dual-card__mode-pill,
-    .dual-card__power-pill,
-    .dual-card__scene-trigger {
-        border-color: rgba(255, 255, 255, 0.12);
-        background: rgba(255, 255, 255, 0.04);
-        color: rgba(241, 245, 249, 0.92);
-        box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.1),
-            0 3px 8px rgba(0, 0, 0, 0.14);
-        backdrop-filter: blur(2px) saturate(108%);
-        -webkit-backdrop-filter: blur(2px) saturate(108%);
-    }
-
-    .dual-card__mode-pill.is-active,
-    .dual-card__power-pill.is-active,
-    .dual-card__scene-trigger.is-open,
-    .dual-card__scene-trigger:not(:disabled):hover {
-        border-color: rgba(255, 255, 255, 0.18);
-        background: rgba(255, 255, 255, 0.06);
-        box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.12),
-            0 4px 10px rgba(0, 0, 0, 0.16);
-    }
-
     .dual-card__scene-menu {
         border-color: rgba(255, 255, 255, 0.08);
         background: linear-gradient(145deg, rgba(22, 27, 34, 0.9) 0%, rgba(28, 34, 42, 0.84) 100%);
@@ -440,16 +435,5 @@
             inset 0 1px 0 rgba(255, 255, 255, 0.08);
         backdrop-filter: blur(3px) saturate(110%);
         -webkit-backdrop-filter: blur(3px) saturate(110%);
-    }
-
-    .dual-card__scene-option {
-        background: rgba(255, 255, 255, 0.04);
-        color: rgba(241, 245, 249, 0.92);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-    }
-
-    .dual-card__scene-option:hover {
-        background: rgba(255, 255, 255, 0.06);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
     }
 }
