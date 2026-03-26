@@ -1,74 +1,92 @@
-import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { useMemo, useState } from 'react';
 import { CardApp } from './App';
 
 function MockHomeAssistant() {
-    const [mockState, setMockState] = useState<any>({
+    const [mockState, setMockState] = useState({
         state: 'on',
         attributes: {
-            friendly_name: 'Virtual Preview Light',
-            brightness: 128, // 50%
+            friendly_name: 'Living room',
+            brightness: 237,
             color_mode: 'color_temp',
-            color_temp: 250, // 4000K
-            color_temp_kelvin: 4000,
+            color_temp: 412,
+            color_temp_kelvin: 2430,
             min_mireds: 153,
             max_mireds: 500,
-            hs_color: [30, 50]
-        }
+            hs_color: [38, 62] as [number, number],
+            supported_color_modes: ['color_temp', 'hs'],
+        },
     });
 
-    const hass = React.useMemo(() => ({
-        states: {
-            'light.preview': mockState
-        },
-        callService: async (domain: string, service: string, serviceData: any) => {
-            console.log(`[Mock HA] ${domain}.${service}`, serviceData);
-            if (domain === 'light') {
-                setMockState((prev: any) => {
-                    const next = { ...prev };
-                    const attrs = { ...prev.attributes };
-                    
-                    if (service === 'turn_on') {
-                        next.state = 'on';
-                        if (serviceData.brightness !== undefined) {
-                            attrs.brightness = serviceData.brightness;
-                        }
-                        if (serviceData.hs_color !== undefined) {
-                            attrs.hs_color = serviceData.hs_color;
-                            attrs.color_mode = 'hs';
-                            // Clear temp when hs_color is set
-                            attrs.color_temp = null;
-                            attrs.color_temp_kelvin = null;
-                        }
-                        if (serviceData.color_temp !== undefined) {
-                            attrs.color_temp = serviceData.color_temp;
-                            attrs.color_temp_kelvin = Math.round(1000000 / serviceData.color_temp);
-                            attrs.color_mode = 'color_temp';
-                        }
-                    } else if (service === 'turn_off') {
+    const hass = useMemo(
+        () => ({
+            states: {
+                'light.preview': mockState,
+            },
+            callService: async (domain: string, service: string, serviceData: Record<string, unknown>) => {
+                if (domain !== 'light') return;
+
+                setMockState((previous) => {
+                    const next = { ...previous, attributes: { ...previous.attributes } };
+
+                    if (service === 'turn_off') {
                         next.state = 'off';
+                        return next;
                     }
-                    
-                    next.attributes = attrs;
+
+                    next.state = 'on';
+
+                    if (typeof serviceData.brightness === 'number') {
+                        next.attributes.brightness = serviceData.brightness;
+                    }
+
+                    if (Array.isArray(serviceData.hs_color)) {
+                        next.attributes.hs_color = serviceData.hs_color as [number, number];
+                        next.attributes.color_mode = 'hs';
+                        next.attributes.color_temp = null as unknown as number;
+                        next.attributes.color_temp_kelvin = null as unknown as number;
+                    }
+
+                    if (typeof serviceData.color_temp_kelvin === 'number') {
+                        next.attributes.color_temp_kelvin = serviceData.color_temp_kelvin;
+                        next.attributes.color_temp = Math.round(1000000 / serviceData.color_temp_kelvin);
+                        next.attributes.color_mode = 'color_temp';
+                    }
+
                     return next;
                 });
-            }
-        }
-    }), [mockState]);
+            },
+        }),
+        [mockState]
+    );
 
     return (
-        <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '100vw',
-            height: '100vh',
-            backgroundColor: '#efefef',
-            padding: '24px',
-            boxSizing: 'border-box'
-        }}>
-            <div style={{ maxWidth: '600px', width: '100%' }}>
-               <CardApp hass={hass} entityId="light.preview" />
+        <div
+            style={{
+                minHeight: '100vh',
+                background: '#f3f4f6',
+                padding: '32px',
+                boxSizing: 'border-box',
+                fontFamily: 'system-ui, sans-serif',
+            }}
+        >
+            <div
+                style={{
+                    display: 'grid',
+                    gap: '24px',
+                    maxWidth: '880px',
+                    margin: '0 auto',
+                }}
+            >
+                <CardApp hass={hass} entityId="light.preview" layout="compact" />
+                <div
+                    style={{
+                        maxWidth: '460px',
+                        margin: '0 auto',
+                    }}
+                >
+                    <CardApp hass={hass} entityId="light.preview" layout="expanded" />
+                </div>
             </div>
         </div>
     );
@@ -76,6 +94,5 @@ function MockHomeAssistant() {
 
 const rootElement = document.getElementById('root');
 if (rootElement) {
-    const root = createRoot(rootElement);
-    root.render(<MockHomeAssistant />);
+    createRoot(rootElement).render(<MockHomeAssistant />);
 }

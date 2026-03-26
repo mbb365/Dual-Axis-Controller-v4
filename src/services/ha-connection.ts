@@ -12,6 +12,7 @@ export interface LightState {
         color_temp?: number;
         color_temp_kelvin?: number;
         color_mode?: string;
+        supported_color_modes?: string[];
         min_mireds?: number;
         max_mireds?: number;
     };
@@ -32,6 +33,7 @@ export async function callLightService(
         brightness?: number; // 0–100 scale, converted to 0–255 internally
         hs_color?: [number, number];
         color_temp?: number;
+        color_temp_kelvin?: number;
     } = {}
 ) {
     if (!hass) return;
@@ -50,6 +52,9 @@ export async function callLightService(
     }
     if (params.color_temp !== undefined) {
         serviceData.color_temp = params.color_temp;
+    }
+    if (params.color_temp_kelvin !== undefined) {
+        serviceData.color_temp_kelvin = params.color_temp_kelvin;
     }
     await hass.callService('light', 'turn_on', serviceData);
 }

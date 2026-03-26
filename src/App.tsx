@@ -1,184 +1,273 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { getLightState, callLightService } from './services/ha-connection';
-import { CompactCard } from './components/CompactCard.tsx';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { CompactCard, type CardLayout } from './components/CompactCard';
+import { callLightService, getLightState } from './services/ha-connection';
+
+type HassAction = 'tap' | 'hold' | 'double_tap';
 
 export interface CardAppProps {
-  hass: any;
-  entityId: string;
+    hass: any;
+    entityId: string;
+    icon?: string;
+    name?: string;
+    layout?: CardLayout | 'auto';
+    onCardAction?: (action: HassAction) => void;
+    canHoldAction?: boolean;
+    canDoubleTapAction?: boolean;
 }
 
-export function CardApp({ hass, entityId }: CardAppProps) {
-  const light = getLightState(hass, entityId);
-  const lightName = light?.attributes.friendly_name || entityId;
-
-  const [hue, setHue] = useState(0);
-  const [saturation, setSaturation] = useState(0);
-  const [brightness, setBrightness] = useState(50);
-  const [kelvin, setKelvin] = useState<number | null>(null);
-  const [isOn, setIsOn] = useState(false);
-  const [uiMode, setUiMode] = useState<'temperature' | 'spectrum'>('temperature');
-
-  const lastCommandTime = useRef(0);
-  const isUserInteracting = useRef(false);
-  const interactionTimeout = useRef<number | null>(null);
-
-  // Sync UI state from hass whenever Home Assistant updates the entity
-  useEffect(() => {
+export function CardApp({
+    hass,
+    entityId,
+    icon = 'mdi:lightbulb',
+    name,
+    layout = 'compact',
+    onCardAction,
+    canHoldAction = false,
+    canDoubleTapAction = false,
+}: CardAppProps) {
     const light = getLightState(hass, entityId);
-    if (!light || isUserInteracting.current) return;
+    const lightName = name || light?.attributes.friendly_name || entityId;
+    const supportedColorModes = light?.attributes.supported_color_modes || [];
+    const supportsTemperature =
+        supportedColorModes.includes('color_temp') ||
+        light?.attributes.color_mode === 'color_temp' ||
+        light?.attributes.min_mireds != null ||
+        light?.attributes.max_mireds != null;
+    const supportsSpectrum =
+        supportedColorModes.some((mode) => ['hs', 'xy', 'rgb', 'rgbw', 'rgbww'].includes(mode)) ||
+        (light?.attributes.hs_color != null && light?.attributes.color_mode !== 'color_temp');
 
-    setIsOn(light.state === 'on');
+    const rootRef = useRef<HTMLDivElement>(null);
+    const lastCommandTime = useRef(0);
+    const isUserInteracting = useRef(false);
+    const interactionTimeout = useRef<number | null>(null);
 
-    if (light.attributes.brightness !== undefined) {
-      setBrightness(Math.round((light.attributes.brightness / 255) * 100));
-    }
-    if (light.attributes.hs_color) {
-      setHue(light.attributes.hs_color[0]);
-      setSaturation(light.attributes.hs_color[1]);
-    }
+    const [containerWidth, setContainerWidth] = useState(0);
+    const [hue, setHue] = useState(0);
+    const [saturation, setSaturation] = useState(0);
+    const [brightness, setBrightness] = useState(50);
+    const [kelvin, setKelvin] = useState<number | null>(null);
+    const [isOn, setIsOn] = useState(false);
+    const [uiMode, setUiMode] = useState<'temperature' | 'spectrum'>('temperature');
 
-    if (light.attributes.color_temp_kelvin != null || light.attributes.color_temp != null) {
-      const k = light.attributes.color_temp_kelvin || Math.round(1000000 / light.attributes.color_temp!);
-      setKelvin(k);
+    useEffect(() => {
+        if (!rootRef.current) return;
 
-      // If in temperature mode, we need to sync our Hue/Saturation state to match the Kelvin value
-      // so the indicator on the trackpad is in the right place.
-      const minM = light.attributes.min_mireds || 153;
-      const maxM = light.attributes.max_mireds || 500;
-      const lightMireds = light.attributes.color_temp || (1000000 / k);
+        const node = rootRef.current;
+        const observer = new ResizeObserver(([entry]) => {
+            if (!entry) return;
+            setContainerWidth(entry.contentRect.width);
+        });
 
-      // Map mireds [minM, maxM] to x [0, 1]
-      const x = (lightMireds - minM) / (maxM - minM);
-      const clampedX = Math.max(0, Math.min(1, x));
+        observer.observe(node);
+        setContainerWidth(node.getBoundingClientRect().width);
 
-      if (clampedX < 0.5) {
-        setHue(200); // Cool
-        setSaturation(Math.round((0.5 - clampedX) * 2 * 100));
-      } else {
-        setHue(30); // Warm
-        setSaturation(Math.round((clampedX - 0.5) * 2 * 100));
-      }
-    } else if (light.attributes.hs_color) {
-      const [h, s] = light.attributes.hs_color;
-      let x = 0.5;
-      const isCool = Math.abs(h - 200) < Math.abs(h - 30);
-      if (isCool) {
-        x = 0.5 - (s / 200);
-      } else {
-        x = 0.5 + (s / 200);
-      }
-      x = Math.max(0, Math.min(1, x));
-      const minM = light.attributes.min_mireds || 153;
-      const maxM = light.attributes.max_mireds || 500;
-      const mireds = Math.round(minM + x * (maxM - minM));
-      setKelvin(Math.round(1000000 / mireds));
-    }
+        return () => observer.disconnect();
+    }, []);
 
-    // Auto-detect color mode
-    setUiMode(prev => {
+    useEffect(() => {
+        return () => {
+            if (interactionTimeout.current) {
+                window.clearTimeout(interactionTimeout.current);
+            }
+        };
+    }, []);
 
-      const isColorMode = ['hs', 'xy', 'rgb', 'rgbw', 'rgbww'].includes(light.attributes.color_mode || '');
+    useEffect(() => {
+        const nextLight = getLightState(hass, entityId);
+        if (!nextLight || isUserInteracting.current) return;
 
-      if (light.attributes.color_mode === 'color_temp') {
-        return 'temperature';
-      }
+        setIsOn(nextLight.state === 'on');
 
-      if (isColorMode) {
-        // If already in spectrum, stay there as long as the light is in a color mode
-        if (prev === 'spectrum') return 'spectrum';
-
-        // Auto-switch to spectrum only if color is distinctly saturated
-        if (light.attributes.hs_color) {
-          const [h, s] = light.attributes.hs_color;
-          const isWhiteish = s < 8;
-          const isCoolOrWarm = Math.abs(h - 200) < 20 || Math.abs(h - 35) < 20;
-          if (!isWhiteish && !isCoolOrWarm && s > 15) return 'spectrum';
+        if (nextLight.attributes.brightness !== undefined) {
+            setBrightness(Math.round((nextLight.attributes.brightness / 255) * 100));
         }
-      }
 
-      return 'temperature';
-    });
-  }, [hass, entityId]);
+        if (nextLight.attributes.hs_color) {
+            setHue(nextLight.attributes.hs_color[0]);
+            setSaturation(nextLight.attributes.hs_color[1]);
+        }
 
-  const handleControlsChange = useCallback((h: number, s: number, b: number) => {
-    isUserInteracting.current = true;
-    if (interactionTimeout.current) clearTimeout(interactionTimeout.current);
-    interactionTimeout.current = window.setTimeout(() => { isUserInteracting.current = false; }, 500);
+        if (nextLight.attributes.color_temp_kelvin != null || nextLight.attributes.color_temp != null) {
+            const nextKelvin =
+                nextLight.attributes.color_temp_kelvin ||
+                Math.round(1000000 / nextLight.attributes.color_temp!);
+            setKelvin(nextKelvin);
 
-    setHue(h);
-    setSaturation(s);
-    setBrightness(b);
+            const minM = nextLight.attributes.min_mireds || 153;
+            const maxM = nextLight.attributes.max_mireds || 500;
+            const lightMireds = nextLight.attributes.color_temp || 1000000 / nextKelvin;
+            const x = Math.max(0, Math.min(1, (lightMireds - minM) / (maxM - minM)));
 
-    const now = Date.now();
-    if (now - lastCommandTime.current < 200) return; // throttle to ~5 commands/sec
-    lastCommandTime.current = now;
+            if (x < 0.5) {
+                setHue(210);
+                setSaturation(Math.round((0.5 - x) * 200));
+            } else {
+                setHue(38);
+                setSaturation(Math.round((x - 0.5) * 200));
+            }
+        } else if (nextLight.attributes.hs_color) {
+            const [nextHue, nextSaturation] = nextLight.attributes.hs_color;
+            const x =
+                Math.abs(nextHue - 210) < Math.abs(nextHue - 38)
+                    ? 0.5 - nextSaturation / 200
+                    : 0.5 + nextSaturation / 200;
+            const minM = nextLight.attributes.min_mireds || 153;
+            const maxM = nextLight.attributes.max_mireds || 500;
+            const mireds = Math.round(minM + Math.max(0, Math.min(1, x)) * (maxM - minM));
+            setKelvin(Math.round(1000000 / mireds));
+        }
 
-    const serviceParams: any = {
-      brightness: b,
-      hs_color: [h, s]
-    };
+        setUiMode((previousMode) => {
+            const isColorMode = ['hs', 'xy', 'rgb', 'rgbw', 'rgbww'].includes(
+                nextLight.attributes.color_mode || ''
+            );
 
-    if (uiMode === 'temperature') {
-      // Still estimate Kelvin for immediate UI feedback
-      let x = 0.5;
-      const isCool = Math.abs(h - 200) < Math.abs(h - 30);
-      if (isCool) {
-        x = 0.5 - (s / 200);
-      } else {
-        x = 0.5 + (s / 200);
-      }
-      const minM = light?.attributes.min_mireds || 153;
-      const maxM = light?.attributes.max_mireds || 500;
-      const mireds = Math.round(minM + x * (maxM - minM));
-      setKelvin(Math.round(1000000 / mireds));
-      // Note: We send hs_color instead of color_temp for maximum compatibility across multiple light types
+            if (nextLight.attributes.color_mode === 'color_temp' || !supportsSpectrum) {
+                return 'temperature';
+            }
+
+            if (isColorMode) {
+                if (previousMode === 'spectrum') return 'spectrum';
+
+                if (nextLight.attributes.hs_color) {
+                    const [nextHue, nextSaturation] = nextLight.attributes.hs_color;
+                    const isWhiteish = nextSaturation < 8;
+                    const isCoolOrWarm =
+                        Math.abs(nextHue - 210) < 22 || Math.abs(nextHue - 38) < 22;
+
+                    if (!isWhiteish && !isCoolOrWarm && nextSaturation > 15) {
+                        return 'spectrum';
+                    }
+                }
+            }
+
+            return 'temperature';
+        });
+    }, [entityId, hass, supportsSpectrum]);
+
+    const resolvedLayout: CardLayout =
+        layout === 'auto' ? (containerWidth >= 420 ? 'expanded' : 'compact') : layout;
+
+    const markInteraction = useCallback((delayMs: number) => {
+        isUserInteracting.current = true;
+        if (interactionTimeout.current) window.clearTimeout(interactionTimeout.current);
+        interactionTimeout.current = window.setTimeout(() => {
+            isUserInteracting.current = false;
+        }, delayMs);
+    }, []);
+
+    const handleControlsChange = useCallback(
+        (nextHue: number, nextSaturation: number, nextBrightness: number) => {
+            markInteraction(500);
+
+            setHue(nextHue);
+            setSaturation(nextSaturation);
+            setBrightness(nextBrightness);
+
+            const now = Date.now();
+            if (now - lastCommandTime.current < 200) return;
+            lastCommandTime.current = now;
+
+            const serviceParams: Record<string, unknown> = {
+                brightness: nextBrightness,
+            };
+
+            if (uiMode === 'temperature') {
+                const isCool = Math.abs(nextHue - 210) < Math.abs(nextHue - 38);
+                const x = isCool ? 0.5 - nextSaturation / 200 : 0.5 + nextSaturation / 200;
+                const minM = light?.attributes.min_mireds || 153;
+                const maxM = light?.attributes.max_mireds || 500;
+                const mireds = Math.round(minM + Math.max(0, Math.min(1, x)) * (maxM - minM));
+                const nextKelvin = Math.round(1000000 / mireds);
+                setKelvin(nextKelvin);
+
+                if (supportsTemperature) {
+                    serviceParams.color_temp_kelvin = nextKelvin;
+                } else if (supportsSpectrum) {
+                    serviceParams.hs_color = [nextHue, nextSaturation];
+                }
+            } else if (supportsSpectrum) {
+                serviceParams.hs_color = [nextHue, nextSaturation];
+            }
+
+            callLightService(hass, entityId, nextBrightness > 0, serviceParams);
+        },
+        [
+            entityId,
+            hass,
+            light?.attributes.max_mireds,
+            light?.attributes.min_mireds,
+            markInteraction,
+            supportsSpectrum,
+            supportsTemperature,
+            uiMode,
+        ]
+    );
+
+    const handleToggle = useCallback(() => {
+        const nextState = !isOn;
+        setIsOn(nextState);
+        markInteraction(1000);
+        callLightService(hass, entityId, nextState);
+    }, [entityId, hass, isOn, markInteraction]);
+
+    const handleModeChange = useCallback(
+        (mode: 'temperature' | 'spectrum') => {
+            if (mode === 'temperature' && !supportsTemperature) return;
+            if (mode === 'spectrum' && !supportsSpectrum) return;
+
+            setUiMode(mode);
+            markInteraction(1000);
+        },
+        [markInteraction, supportsSpectrum, supportsTemperature]
+    );
+
+    if (!light) {
+        return (
+            <div ref={rootRef}>
+                <div
+                    style={{
+                        padding: '20px',
+                        color: '#ffb3b3',
+                        background: '#1a1a1a',
+                        borderRadius: '12px',
+                        border: '1px solid #ff4d4d',
+                    }}
+                >
+                    <strong>Light not found:</strong> {entityId}
+                    <br />
+                    <small style={{ opacity: 0.7 }}>
+                        Ensure the entity ID is correct and starts with "light."
+                    </small>
+                </div>
+            </div>
+        );
     }
 
-    callLightService(hass, entityId, b > 0, serviceParams);
-  }, [hass, entityId, uiMode, light?.attributes.min_mireds, light?.attributes.max_mireds]);
-
-  const handleToggle = useCallback(() => {
-    const newState = !isOn;
-    setIsOn(newState);
-    isUserInteracting.current = true;
-    if (interactionTimeout.current) clearTimeout(interactionTimeout.current);
-    interactionTimeout.current = window.setTimeout(() => { isUserInteracting.current = false; }, 1000);
-    callLightService(hass, entityId, newState);
-  }, [hass, entityId, isOn]);
-
-  // Debug: Log whenever the card renders
-  console.log('[DualControllerCard] Render', { entityId, lightFound: !!light, isOn });
-
-  if (!light) {
     return (
-      <div style={{ padding: '20px', color: '#ffb3b3', background: '#1a1a1a', borderRadius: '12px', border: '1px solid #ff4d4d' }}>
-        <strong>Light not found:</strong> {entityId}<br />
-        <small style={{ opacity: 0.7 }}>Ensure the entity ID is correct and starts with "light."</small>
-      </div>
+        <div ref={rootRef}>
+            <CompactCard
+                layout={resolvedLayout}
+                lightName={lightName}
+                icon={icon}
+                isOn={isOn}
+                hue={hue}
+                saturation={saturation}
+                brightness={brightness}
+                kelvin={kelvin}
+                uiMode={uiMode}
+                canUseTemperature={supportsTemperature}
+                canUseSpectrum={supportsSpectrum}
+                onModeChange={handleModeChange}
+                onControlsChange={handleControlsChange}
+                onToggle={handleToggle}
+                onCardAction={onCardAction}
+                canHoldAction={canHoldAction}
+                canDoubleTapAction={canDoubleTapAction}
+            />
+        </div>
     );
-  }
-
-  return (
-    <>
-      <CompactCard
-        lightName={lightName}
-        isOn={isOn}
-        hue={hue}
-        saturation={saturation}
-        brightness={brightness}
-        kelvin={kelvin}
-        uiMode={uiMode}
-        onToggle={handleToggle}
-        onModeChange={(mode: 'temperature' | 'spectrum') => {
-          setUiMode(mode);
-          isUserInteracting.current = true;
-          if (interactionTimeout.current) clearTimeout(interactionTimeout.current);
-          interactionTimeout.current = window.setTimeout(() => { isUserInteracting.current = false; }, 3000);
-        }}
-        onControlsChange={handleControlsChange}
-      />
-    </>
-  );
 }
 
 export default CardApp;

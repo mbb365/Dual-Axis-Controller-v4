@@ -1,26 +1,61 @@
-# Dual Axis Controller 🎮
+# Dual Axis Controller
 
-A premium, fluid side-by-side Lovelace card for Home Assistant, designed for maximum aesthetic control over your smart lights. 
+A Home Assistant custom dashboard card for lights with two HA-native layouts:
 
-## ✨ Features
-- **Responsive Trackpad**: An interactive 2D color and brightness control surface that fluidly scales to fit any dashboard layout without breaking boundaries.
-- **Dual Modes**: Seamlessly switch between precise Kelvin Color Temperature control and full-range Hue/Saturation Spectrum mode.
-- **Side-by-Side Design**: Eliminates awkward vertical stacking by clustering quick-action mode buttons alongside the main trackpad.
-- **Shadow DOM Isolation**: Guarantees that global Home Assistant themes and unpredictable dashboard updates will never accidentally squash or break your card's layout.
-- **Live Peer Indicators**: Trackpad displays the real-time position of other active lights.
+- `compact` for the dashboard
+- `expanded` for popup or detail views
 
-## 📦 Installation via HACS
-1. Open HACS and navigate to **Frontend**.
-2. Click the three dots in the top right -> **Custom repositories**.
-3. Add this repository URL and select category **Lovelace**.
-4. Click **Download** and reload your browser window.
+The compact card is designed to feel like a standard Home Assistant card: a clean state summary that responds to normal card actions. The expanded card provides the larger 2D light control surface.
 
-## ⚙️ Configuration
-Add the custom card to your dashboard using the following YAML:
+## Features
+
+- Compact dashboard card with name, icon, and light status
+- Expanded controller layout for popup or detail use
+- Standard Home Assistant card actions via `tap_action`, `hold_action`, and `double_tap_action`
+- Home Assistant-aware sizing through `getCardSize()` and `getGridOptions()`
+- HACS-compatible repository structure and release workflow
+
+## Install With HACS
+
+1. Open HACS and go to **Dashboard**.
+2. Open the three-dot menu and choose **Custom repositories**.
+3. Add `https://github.com/mbb365/Dual-Axis-Controller-v4` as a **Dashboard** repository.
+4. Download the repository in HACS.
+5. Reload Home Assistant.
+
+For testing the latest in-development version, choose the `main` branch in HACS when downloading. HACS supports downloading the default branch for custom repositories, and if releases exist it can also offer recent releases alongside that branch.
+
+## YAML
+
+Compact dashboard card:
 
 ```yaml
 type: custom:dual-controller-v3
-entity: light.your_light_entity
+entity: light.living_room
+layout: compact
+tap_action:
+  action: more-info
 ```
 
-*(Note: Ensure your light entity supports `color_temp` or `hs_color` features for the trackpad to function).*
+Expanded card:
+
+```yaml
+type: custom:dual-controller-v3
+entity: light.living_room
+layout: expanded
+```
+
+Automatic layout selection based on available width:
+
+```yaml
+type: custom:dual-controller-v3
+entity: light.living_room
+layout: auto
+```
+
+## Notes
+
+- `layout: compact` is the recommended dashboard default.
+- `layout: expanded` is intended for popup or detail contexts.
+- In compact mode, the card fires standard Home Assistant actions instead of opening a custom modal by itself.
+- The bundled file produced for Home Assistant is `dual-axis-controller.js`.

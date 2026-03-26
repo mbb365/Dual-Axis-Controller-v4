@@ -1,12 +1,5 @@
-import { useState, useRef } from 'react';
+import { useRef, useState } from 'react';
 import classNames from 'classnames';
-
-interface PeerLight {
-    hue: number;
-    saturation: number;
-    brightness: number;
-    isOn: boolean;
-}
 
 interface HaloProps {
     hue: number;
@@ -16,101 +9,73 @@ interface HaloProps {
     onChange: (h: number, s: number, b: number) => void;
     onToggle: () => void;
     mode: 'temperature' | 'spectrum';
-    peerLights?: PeerLight[];
-    activeSceneName?: string | null;
 }
-
-const SPECTRUM_GRADIENT = 'linear-gradient(to right, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%)';
 
 const HALO_CSS = `
-.halo-container {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 20px;
-    position: relative;
-    width: 100%;
-    flex: 1;
+.halo {
+    container-type: inline-size;
 }
 
-.trackpadWrapperV2 {
-    width: 100%;
-    max-width: 240px;
+.halo__pad-shell {
     position: relative;
+    width: 100%;
     aspect-ratio: 1 / 1;
 }
 
-.trackpad {
+.halo__pad {
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    border-radius: 8px;
+    inset: 0;
+    border-radius: 18px;
+    overflow: hidden;
     cursor: crosshair;
     touch-action: none;
-    border: none;
-    box-shadow: none;
-    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 3px 8px rgba(15, 23, 42, 0.08);
 }
 
-.trackpad.off {
-    filter: brightness(0.2) grayscale(0.5);
-    border-color: rgba(255, 255, 255, 0.05);
+.halo__pad.is-off {
+    filter: saturate(0.55) brightness(0.88);
     cursor: pointer;
 }
 
-.halo-indicator {
+.halo__indicator {
     position: absolute;
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    border: 2.5px solid white;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
     transform: translate(-50%, -50%);
+    border: 4px solid rgba(255, 255, 255, 0.98);
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.2);
     pointer-events: none;
-    transition: all 0.1s ease-out, opacity 0.5s ease-in-out;
 }
 
-.off .halo-indicator {
-    opacity: 0;
-}
-
-.brightnessValue {
-    display: none;
-}
-
-.off .brightnessValue {
-    opacity: 0.1;
-}
-
-.peerIndicator {
-    width: 16px;
-    height: 16px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
-    z-index: 10;
-}
-
-.barIndicator {
-    position: absolute;
-    width: calc(100% - 40px);
-    height: 12px;
-    border-radius: 6px;
-    background: white;
-    border: 2px solid rgba(0, 0, 0, 0.2);
-    left: 50% !important;
-    transform: translate(-50%, -50%);
-    pointer-events: none;
-    transition: all 0.1s ease-out, opacity 0.5s ease-in-out;
-    box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
-}
-
-.off .barIndicator {
-    opacity: 0;
+@container (max-width: 420px) {
+    .halo__indicator {
+        width: 30px;
+        height: 30px;
+        border-width: 3px;
+    }
 }
 `;
 
-export const Halo = ({
+function xPosFromHueSat(hue: number, sat: number, mode: 'temperature' | 'spectrum') {
+    if (mode === 'spectrum') {
+        return (hue / 360) * 100;
+    }
+
+    const leftHue = 210;
+    const rightHue = 38;
+    const coolDist = Math.abs(hue - leftHue);
+    const warmDist = Math.abs(hue - rightHue);
+
+    if (coolDist < warmDist) {
+        return (0.5 - sat / 200) * 100;
+    }
+
+    return (0.5 + sat / 200) * 100;
+}
+
+export function Halo({
     hue,
     saturation,
     brightness,
@@ -118,176 +83,98 @@ export const Halo = ({
     onChange,
     onToggle,
     mode,
-    peerLights = [],
-    activeSceneName
-}: HaloProps) => {
+}: HaloProps) {
     const trackpadRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
 
-    const handlePointerDown = (e: React.PointerEvent) => {
-        if (!isOn) return;
-        setIsDragging(true);
-        e.currentTarget.setPointerCapture(e.pointerId);
-        updateFromPosition(e);
-    };
-
-    const handlePointerMove = (e: React.PointerEvent) => {
-        if (!isDragging || !isOn) return;
-        updateFromPosition(e);
-    };
-
-    const handleClick = () => {
-        if (!isOn) {
-            onToggle();
-        }
-    };
-
-    const handlePointerUp = (e: React.PointerEvent) => {
-        setIsDragging(false);
-        e.currentTarget.releasePointerCapture(e.pointerId);
-    };
-
-    const updateFromPosition = (e: React.PointerEvent) => {
+    const updateFromPosition = (event: React.PointerEvent) => {
         if (!trackpadRef.current) return;
+
         const rect = trackpadRef.current.getBoundingClientRect();
-        let xPercent = (e.clientX - rect.left) / rect.width;
-        let yPercent = (e.clientY - rect.top) / rect.height;
+        let xPercent = (event.clientX - rect.left) / rect.width;
+        let yPercent = (event.clientY - rect.top) / rect.height;
 
         xPercent = Math.max(0, Math.min(1, xPercent));
         yPercent = Math.max(0, Math.min(1, yPercent));
 
-        let newHue: number;
-        let newSat: number;
+        let nextHue: number;
+        let nextSaturation: number;
 
         if (mode === 'spectrum') {
-            newHue = Math.round(xPercent * 360);
-            newSat = 100; // Keep saturation high for spectrum mode
+            nextHue = Math.round(xPercent * 360);
+            nextSaturation = 100;
+        } else if (xPercent < 0.5) {
+            nextHue = 210;
+            nextSaturation = Math.round((0.5 - xPercent) * 200);
         } else {
-            if (xPercent < 0.5) {
-                newHue = 200; // Cool
-                newSat = (0.5 - xPercent) * 2 * 100;
-            } else {
-                newHue = 30; // Warm
-                newSat = (xPercent - 0.5) * 2 * 100;
-            }
+            nextHue = 38;
+            nextSaturation = Math.round((xPercent - 0.5) * 200);
         }
 
-        const newBrightness = (1 - yPercent) * 100;
-        onChange(newHue, Math.round(newSat), Math.round(newBrightness));
+        const nextBrightness = Math.round((1 - yPercent) * 100);
+        onChange(nextHue, nextSaturation, nextBrightness);
     };
 
-    let backgroundGradient: string;
-
-    if (mode === 'spectrum') {
-        backgroundGradient = SPECTRUM_GRADIENT;
-    } else {
-        backgroundGradient = 'linear-gradient(to right, #7fd1ff, #fff 50%, #ffb366)';
-    }
-
-    const isRepresentable = (_h: number, s: number, m: 'temperature' | 'spectrum') => {
-        if (m === 'spectrum') {
-            return s >= 30;
-        } else {
-            return true;
+    const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+        if (!isOn) {
+            onToggle();
+            return;
         }
+
+        setIsDragging(true);
+        event.currentTarget.setPointerCapture(event.pointerId);
+        updateFromPosition(event);
     };
 
-    const mainIndicatorVisible = isRepresentable(hue, saturation, mode);
+    const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+        if (!isDragging || !isOn) return;
+        updateFromPosition(event);
+    };
+
+    const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+        if (isDragging) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+        }
+        setIsDragging(false);
+    };
+
+    const padBackground =
+        mode === 'spectrum'
+            ? 'linear-gradient(90deg, #ff6b6b 0%, #ffd166 18%, #95d16f 36%, #56cfe1 54%, #7b6dff 74%, #ff77c8 100%)'
+            : 'linear-gradient(90deg, rgba(191, 227, 255, 0.96) 0%, rgba(255, 255, 255, 0.98) 46%, rgba(245, 197, 86, 0.96) 100%)';
+
+    const indicatorColor =
+        mode === 'spectrum'
+            ? `hsl(${hue}, 100%, 50%)`
+            : `hsl(${hue}, ${Math.max(12, saturation)}%, ${Math.max(58, 90 - saturation * 0.18)}%)`;
 
     return (
-        <div className="halo-container">
-            <style dangerouslySetInnerHTML={{ __html: HALO_CSS }} />
-            <div className="trackpadWrapperV2">
+        <div className="halo">
+            <style>{HALO_CSS}</style>
+            <div className="halo__pad-shell">
                 <div
                     ref={trackpadRef}
-                    className={classNames('trackpad', { 'off': !isOn })}
+                    className={classNames('halo__pad', { 'is-off': !isOn })}
                     onPointerDown={handlePointerDown}
                     onPointerMove={handlePointerMove}
                     onPointerUp={handlePointerUp}
                     onPointerCancel={handlePointerUp}
-                    onClick={handleClick}
                     style={{
-                        background: `linear-gradient(to top, var(--ha-card-background, var(--card-background-color, #ffffff)) 0%, transparent 100%), ${backgroundGradient}`
+                        background: `linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255,255,255,0) 100%), ${padBackground}`,
                     }}
                 >
-                    {peerLights.map((peer, i) => {
-                        const visible = isRepresentable(peer.hue, peer.saturation, mode);
-                        if (!visible) return null;
-
-                        return (
-                            <div
-                                key={i}
-                                className={classNames('halo-indicator', 'peerIndicator')}
-                                style={{
-                                    left: `${xPosFromHueSat(peer.hue, peer.saturation, mode)}%`,
-                                    top: `${100 - peer.brightness}%`,
-                                    opacity: peer.isOn ? 0.4 : 0.1,
-                                    backgroundColor: mode === 'spectrum'
-                                        ? `hsl(${peer.hue}, 100%, 50%)`
-                                        : `hsl(${peer.hue}, ${peer.saturation || 0}%, 75%)`
-                                }}
-                            />
-                        );
-                    })}
-                    {mainIndicatorVisible && (
+                    {isOn ? (
                         <div
-                            className="halo-indicator"
+                            className="halo__indicator"
                             style={{
                                 left: `${xPosFromHueSat(hue, saturation, mode)}%`,
                                 top: `${100 - brightness}%`,
-                                backgroundColor: mode === 'spectrum'
-                                    ? `hsl(${hue}, 100%, 50%)`
-                                    : `hsl(${hue}, ${saturation}%, ${100 - (saturation / 100) * 25}%)`
+                                background: indicatorColor,
                             }}
-                        >
-                            {activeSceneName && (
-                                <div style={{
-                                    position: 'absolute',
-                                    top: '40px',
-                                    left: '50%',
-                                    transform: 'translateX(-50%)',
-                                    fontSize: '0.65rem',
-                                    fontWeight: 700,
-                                    color: 'white',
-                                    textShadow: '0 1px 4px rgba(0,0,0,0.4)',
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '0.1em',
-                                    pointerEvents: 'none',
-                                    whiteSpace: 'nowrap',
-                                    opacity: 0.9,
-                                    animation: 'fadeIn 0.3s ease-out'
-                                }}>
-                                    {activeSceneName}
-                                </div>
-                            )}
-                        </div>
-                    )}
-                    <div
-                        className="brightnessValue"
-                        style={{ color: 'var(--secondary-text-color, rgba(0,0,0,0.3))' }}
-                    >
-                        {Math.round(brightness)}%
-                    </div>
+                        />
+                    ) : null}
                 </div>
             </div>
         </div>
     );
-};
-
-function xPosFromHueSat(hue: number, sat: number, mode: 'temperature' | 'spectrum') {
-    if (mode === 'spectrum') {
-        return (hue / 360) * 100;
-    }
-
-    const leftHue = 200;
-    const rightHue = 30;
-
-    const coolDist = Math.abs(hue - leftHue);
-    const warmDist = Math.abs(hue - rightHue);
-
-    if (coolDist < warmDist) {
-        return (0.5 - (sat / 200)) * 100;
-    } else {
-        return (0.5 + (sat / 200)) * 100;
-    }
 }
