@@ -193,6 +193,44 @@ const HALO_CSS = `
         border-width: 3px;
     }
 }
+
+@media (prefers-color-scheme: dark) {
+    .halo__pad {
+        background-color: rgba(26, 31, 38, 0.96);
+        border-color: rgba(255, 255, 255, 0.08);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.08),
+            0 3px 8px rgba(0, 0, 0, 0.18);
+    }
+
+    .halo__pad::before {
+        opacity: 0.18;
+    }
+
+    .halo__pad::after {
+        background: linear-gradient(145deg, rgba(255, 255, 255, 0.02) 0%, rgba(240, 244, 249, 0.012) 100%);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+
+    .halo__pad.is-off {
+        border-color: rgba(124, 58, 237, 0.08);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.07),
+            inset 0 0 42px rgba(168, 85, 247, 0.08),
+            0 3px 8px rgba(0, 0, 0, 0.18);
+    }
+
+    .halo__pulse::before {
+        opacity: 0;
+        filter: blur(9px);
+    }
+
+    .halo__pulse::after {
+        box-shadow:
+            0 0 0 1px rgba(255, 255, 255, 0.12),
+            0 0 12px color-mix(in srgb, var(--halo-pulse-color) 12%, transparent 88%);
+    }
+}
 `;
 
 function xPosFromHueSat(hue: number, sat: number, mode: 'temperature' | 'spectrum') {

@@ -15,6 +15,89 @@ interface QueuedControlCommand {
     hsColor?: [number, number];
 }
 
+interface HassEntityRegistryEntry {
+    area_id?: string | null;
+    device_id?: string | null;
+}
+
+interface HassDeviceRegistryEntry {
+    area_id?: string | null;
+}
+
+function asStringArray(value: unknown): string[] {
+    if (Array.isArray(value)) {
+        return value.filter((item): item is string => typeof item === 'string');
+    }
+
+    return typeof value === 'string' ? [value] : [];
+}
+
+function getEntityAreaIds(
+    entityId: string,
+    entityRegistry: Record<string, HassEntityRegistryEntry>,
+    deviceRegistry: Record<string, HassDeviceRegistryEntry>
+) {
+    const entityEntry = entityRegistry[entityId];
+    const areaIds = new Set<string>();
+
+    if (typeof entityEntry?.area_id === 'string' && entityEntry.area_id) {
+        areaIds.add(entityEntry.area_id);
+    }
+
+    if (typeof entityEntry?.device_id === 'string' && entityEntry.device_id) {
+        const deviceAreaId = deviceRegistry[entityEntry.device_id]?.area_id;
+        if (typeof deviceAreaId === 'string' && deviceAreaId) {
+            areaIds.add(deviceAreaId);
+        }
+    }
+
+    return areaIds;
+}
+
+function sceneMatchesLightOrArea(
+    sceneState: {
+        attributes?: Record<string, unknown>;
+    } | undefined,
+    targetEntityId: string,
+    entityRegistry: Record<string, HassEntityRegistryEntry>,
+    deviceRegistry: Record<string, HassDeviceRegistryEntry>
+) {
+    if (!sceneState) return false;
+
+    const sceneEntityIds = asStringArray(sceneState.attributes?.entity_id);
+    if (sceneEntityIds.includes(targetEntityId)) {
+        return true;
+    }
+
+    const sceneDeviceIds = new Set(asStringArray(sceneState.attributes?.device_id));
+    const sceneAreaIds = new Set(asStringArray(sceneState.attributes?.area_id));
+    const targetAreaIds = getEntityAreaIds(targetEntityId, entityRegistry, deviceRegistry);
+    const targetDeviceId = entityRegistry[targetEntityId]?.device_id;
+
+    if (targetDeviceId && sceneDeviceIds.has(targetDeviceId)) {
+        return true;
+    }
+
+    if (targetAreaIds.size > 0) {
+        for (const areaId of targetAreaIds) {
+            if (sceneAreaIds.has(areaId)) {
+                return true;
+            }
+        }
+
+        for (const sceneEntityId of sceneEntityIds) {
+            const sceneEntityAreaIds = getEntityAreaIds(sceneEntityId, entityRegistry, deviceRegistry);
+            for (const areaId of sceneEntityAreaIds) {
+                if (targetAreaIds.has(areaId)) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
 export interface CardAppProps {
     hass: any;
     entityId: string;
@@ -36,11 +119,13 @@ export function CardApp({
     onHoldAction,
     onDoubleTapAction,
 }: CardAppProps) {
+    const entityRegistry = (hass?.entities ?? {}) as Record<string, HassEntityRegistryEntry>;
+    const deviceRegistry = (hass?.devices ?? {}) as Record<string, HassDeviceRegistryEntry>;
     const allStates = (hass?.states ?? {}) as Record<
         string,
         {
             state?: string;
-            attributes?: {
+            attributes?: Record<string, unknown> & {
                 friendly_name?: string;
             };
         }
@@ -57,7 +142,12 @@ export function CardApp({
         supportedColorModes.some((mode) => ['hs', 'xy', 'rgb', 'rgbw', 'rgbww'].includes(mode)) ||
         (light?.attributes.hs_color != null && light?.attributes.color_mode !== 'color_temp');
     const sceneOptions: SceneOption[] = Object.entries(allStates)
-        .filter(([sceneEntityId, sceneState]) => sceneEntityId.startsWith('scene.') && sceneState?.state !== 'unavailable')
+        .filter(
+            ([sceneEntityId, sceneState]) =>
+                sceneEntityId.startsWith('scene.') &&
+                sceneState?.state !== 'unavailable' &&
+                sceneMatchesLightOrArea(sceneState, entityId, entityRegistry, deviceRegistry)
+        )
         .map(([sceneEntityId, sceneState]) => ({
             entityId: sceneEntityId,
             name: sceneState.attributes?.friendly_name || sceneEntityId.replace(/^scene\./, '').replace(/_/g, ' '),

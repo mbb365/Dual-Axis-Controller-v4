@@ -173,13 +173,11 @@
     border-radius: 999px;
     border: 1px solid rgba(17, 24, 39, 0.22);
     background: rgba(255, 255, 255, 0.14);
-    color: rgba(17, 24, 39, 0.92);
+    color: #1f2937;
     font: inherit;
     font-size: 0.95rem;
     cursor: pointer;
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.56),
-        0 8px 18px rgba(15, 23, 42, 0.05);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.56);
     backdrop-filter: blur(12px) saturate(130%);
     -webkit-backdrop-filter: blur(12px) saturate(130%);
     transition: border-color 0.18s ease, transform 0.18s ease, opacity 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
@@ -188,9 +186,7 @@
 .dual-card__mode-pill.is-active {
     border-color: rgba(17, 24, 39, 0.34);
     background: rgba(255, 255, 255, 0.18);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.66),
-        0 10px 20px rgba(15, 23, 42, 0.06);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.66);
 }
 
 .dual-card__mode-pill:disabled {
@@ -215,7 +211,7 @@
     cursor: pointer;
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.62),
-        0 8px 18px rgba(15, 23, 42, 0.06);
+        0 5px 11px rgba(15, 23, 42, 0.036);
     backdrop-filter: blur(12px) saturate(130%);
     -webkit-backdrop-filter: blur(12px) saturate(130%);
     transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, color 0.18s ease;
@@ -226,7 +222,7 @@
     color: rgba(31, 41, 55, 0.92);
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.7),
-        0 10px 20px rgba(15, 23, 42, 0.08);
+        0 6px 12px rgba(15, 23, 42, 0.048);
 }
 
 .dual-card__power-pill:hover {
@@ -253,7 +249,7 @@
     border-radius: 18px;
     border: 1px solid rgba(17, 24, 39, 0.22);
     background: rgba(255, 255, 255, 0.14);
-    color: rgba(17, 24, 39, 0.92);
+    color: #1f2937;
     font: inherit;
     font-size: 0.95rem;
     display: flex;
@@ -262,9 +258,7 @@
     gap: 10px;
     padding: 8px 14px;
     cursor: pointer;
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.56),
-        0 8px 18px rgba(15, 23, 42, 0.05);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.56);
     backdrop-filter: blur(12px) saturate(130%);
     -webkit-backdrop-filter: blur(12px) saturate(130%);
     transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
@@ -274,9 +268,7 @@
 .dual-card__scene-trigger:not(:disabled):hover {
     transform: translateY(-1px);
     border-color: rgba(17, 24, 39, 0.34);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.64),
-        0 10px 20px rgba(15, 23, 42, 0.06);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.64);
 }
 
 .dual-card__scene-trigger:disabled {
@@ -318,19 +310,19 @@
     border: 0;
     border-radius: 14px;
     background: rgba(255, 255, 255, 0.12);
-    color: rgba(17, 24, 39, 0.92);
+    color: #1f2937;
     font: inherit;
     font-size: 0.94rem;
     text-align: left;
     padding: 8px 12px;
     cursor: pointer;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    box-shadow: none;
     transition: background 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
 }
 
 .dual-card__scene-option:hover {
     background: rgba(255, 255, 255, 0.18);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.62);
+    box-shadow: none;
     transform: translateY(-1px);
 }
 
@@ -388,5 +380,76 @@
     .dual-card__subtitle {
         font-size: 0.78rem;
         line-height: 1.15;
+    }
+}
+
+@media (prefers-color-scheme: dark) {
+    .dual-card--compact {
+        background-color: rgba(27, 31, 38, 0.9);
+        border-color: rgba(255, 255, 255, 0.08);
+        box-shadow:
+            0 6px 14px rgba(0, 0, 0, 0.18),
+            inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(3px) saturate(110%);
+        -webkit-backdrop-filter: blur(3px) saturate(110%);
+    }
+
+    .dual-card--compact::before {
+        opacity: 0.14;
+    }
+
+    .dual-card--compact::after {
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%);
+    }
+
+    .dual-card__icon-shell {
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.14),
+            0 4px 10px rgba(0, 0, 0, 0.18);
+    }
+
+    .dual-card__mode-pill,
+    .dual-card__power-pill,
+    .dual-card__scene-trigger {
+        border-color: rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.04);
+        color: rgba(241, 245, 249, 0.92);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.1),
+            0 3px 8px rgba(0, 0, 0, 0.14);
+        backdrop-filter: blur(2px) saturate(108%);
+        -webkit-backdrop-filter: blur(2px) saturate(108%);
+    }
+
+    .dual-card__mode-pill.is-active,
+    .dual-card__power-pill.is-active,
+    .dual-card__scene-trigger.is-open,
+    .dual-card__scene-trigger:not(:disabled):hover {
+        border-color: rgba(255, 255, 255, 0.18);
+        background: rgba(255, 255, 255, 0.06);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.12),
+            0 4px 10px rgba(0, 0, 0, 0.16);
+    }
+
+    .dual-card__scene-menu {
+        border-color: rgba(255, 255, 255, 0.08);
+        background: linear-gradient(145deg, rgba(22, 27, 34, 0.9) 0%, rgba(28, 34, 42, 0.84) 100%);
+        box-shadow:
+            0 10px 22px rgba(0, 0, 0, 0.2),
+            inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(3px) saturate(110%);
+        -webkit-backdrop-filter: blur(3px) saturate(110%);
+    }
+
+    .dual-card__scene-option {
+        background: rgba(255, 255, 255, 0.04);
+        color: rgba(241, 245, 249, 0.92);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+
+    .dual-card__scene-option:hover {
+        background: rgba(255, 255, 255, 0.06);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
     }
 }

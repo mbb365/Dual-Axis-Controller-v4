@@ -167,37 +167,6 @@ function buildIconForeground(
     return '#ffffff';
 }
 
-function buildExpandedBackground(
-    isOn: boolean,
-    hue: number,
-    saturation: number,
-    brightness: number,
-    uiMode: 'temperature' | 'spectrum'
-) {
-    if (!isOn) {
-        return 'linear-gradient(145deg, rgba(255, 255, 255, 0.7) 0%, rgba(244, 247, 251, 0.78) 52%, rgba(233, 237, 242, 0.66) 100%)';
-    }
-
-    const intensity = Math.max(0, Math.min(1, brightness / 100));
-
-    if (uiMode === 'temperature') {
-        const normalizedSaturation = Math.max(0, Math.min(1, saturation / 100));
-        const haloTint = `hsla(${hue}, ${Math.max(6, 12 + normalizedSaturation * 32)}%, ${92 - intensity * 10}%, ${
-            0.112 + normalizedSaturation * 0.112 + intensity * 0.048
-        })`;
-        const whiteGlow = `hsla(0, 0%, ${98 - intensity * 3}%, ${0.336 - normalizedSaturation * 0.096})`;
-        const shadowTone = `hsla(220, 18%, ${92 - intensity * 7}%, ${0.32 - normalizedSaturation * 0.08})`;
-
-        return `radial-gradient(circle at 20% 18%, ${whiteGlow} 0%, ${whiteGlow} 18%, transparent 46%), radial-gradient(circle at 78% 20%, ${haloTint} 0%, transparent 38%), linear-gradient(145deg, rgba(255, 255, 255, 0.42) 0%, ${shadowTone} 56%, rgba(255, 255, 255, 0.12) 100%)`;
-    }
-
-    const tintSaturation = Math.max(20, saturation * 0.72);
-    const ambientGlow = `hsla(${hue}, ${tintSaturation}%, ${72 - intensity * 12}%, ${0.128 + intensity * 0.096})`;
-    const softTint = `hsla(${hue}, ${Math.max(16, tintSaturation * 0.56)}%, ${90 - intensity * 8}%, ${0.112 + intensity * 0.064})`;
-
-    return `radial-gradient(circle at 18% 16%, rgba(255, 255, 255, 0.34) 0%, transparent 36%), radial-gradient(circle at 82% 20%, ${ambientGlow} 0%, transparent 38%), linear-gradient(145deg, rgba(255, 255, 255, 0.36) 0%, ${softTint} 54%, rgba(255, 255, 255, 0.1) 100%)`;
-}
-
 export function CompactCard({
     layout,
     lightName,
@@ -374,18 +343,7 @@ export function CompactCard({
     }
 
     return (
-        <div
-            className="dual-card dual-card--expanded"
-            style={{
-                background: buildExpandedBackground(isOn, hue, saturation, brightness, uiMode),
-                border: '1px solid rgba(255, 255, 255, 0.38)',
-                borderRadius: '22px',
-                padding: '16px',
-                boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.46)',
-                backdropFilter: 'blur(16px) saturate(140%)',
-                WebkitBackdropFilter: 'blur(16px) saturate(140%)',
-            }}
-        >
+        <div className="dual-card dual-card--expanded">
             <style>{compactCardStyles}</style>
             <div className="dual-card__expanded-title">{lightName}</div>
 
