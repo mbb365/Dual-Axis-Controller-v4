@@ -9,7 +9,7 @@ lerna-debug.log*
 
 node_modules
 dist/*
-!dist/dual-axis-controller.js
+!dist/dual-axis-controller-v4.js
 dist-ssr
 *.local
 

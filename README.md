@@ -58,4 +58,4 @@ layout: auto
 - `layout: compact` is the recommended dashboard default.
 - `layout: expanded` is intended for popup or detail contexts.
 - In compact mode, the card fires standard Home Assistant actions instead of opening a custom modal by itself.
-- The bundled file produced for Home Assistant is `dual-axis-controller.js`.
+- The bundled file produced for Home Assistant is `dual-axis-controller-v4.js`.

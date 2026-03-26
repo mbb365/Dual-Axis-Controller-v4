@@ -10,7 +10,7 @@ export default defineConfig({
       entry: './src/card-entry.tsx',
       name: 'DualControllerCard',
       formats: ['iife'],
-      fileName: () => 'dual-axis-controller.js',
+      fileName: () => 'dual-axis-controller-v4.js',
     },
     rollupOptions: {
       // We want React bundled directly into the file so HACS doesn't complain about missing external dependencies
