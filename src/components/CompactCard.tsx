@@ -33,7 +33,46 @@ function formatStatus(isOn: boolean, brightness: number, kelvin: number | null, 
         return `${brightnessText} at ${kelvin.toLocaleString()}K`;
     }
 
-    return brightnessText;
+    return `${brightnessText} at color`;
+}
+
+function getRgbText(hue: number, saturation: number, brightness: number) {
+    const s = saturation / 100;
+    const v = brightness / 100;
+    const c = v * s;
+    const normalizedHue = ((hue % 360) + 360) % 360;
+    const x = c * (1 - Math.abs(((normalizedHue / 60) % 2) - 1));
+    const m = v - c;
+
+    let r = 0;
+    let g = 0;
+    let b = 0;
+
+    if (normalizedHue < 60) {
+        r = c;
+        g = x;
+    } else if (normalizedHue < 120) {
+        r = x;
+        g = c;
+    } else if (normalizedHue < 180) {
+        g = c;
+        b = x;
+    } else if (normalizedHue < 240) {
+        g = x;
+        b = c;
+    } else if (normalizedHue < 300) {
+        r = x;
+        b = c;
+    } else {
+        r = c;
+        b = x;
+    }
+
+    const red = Math.round((r + m) * 255);
+    const green = Math.round((g + m) * 255);
+    const blue = Math.round((b + m) * 255);
+
+    return `R${red} G${green} B${blue}`;
 }
 
 function buildCompactBackground(isOn: boolean, hue: number, saturation: number, uiMode: 'temperature' | 'spectrum') {
@@ -95,7 +134,14 @@ export function CompactCard({
         };
     }, []);
 
-    const statusText = formatStatus(isOn, brightness, kelvin, uiMode);
+    const leadingValue =
+        uiMode === 'temperature' && kelvin ? `${kelvin.toLocaleString()}K` : getRgbText(hue, saturation, brightness);
+    const statusText =
+        uiMode === 'temperature'
+            ? formatStatus(isOn, brightness, kelvin, uiMode)
+            : isOn
+              ? `${Math.round(brightness)}% at ${leadingValue}`
+              : 'Off';
 
     const clearHold = () => {
         if (holdTimer.current) {
@@ -188,16 +234,17 @@ export function CompactCard({
     return (
         <div className="dual-card dual-card--expanded">
             <style>{compactCardStyles}</style>
+            <div className="dual-card__expanded-heading">
+                <div className="dual-card__eyebrow">Light</div>
+                <div className="dual-card__expanded-title">{lightName}</div>
+            </div>
+
             <div className="dual-card__expanded-header">
                 <div className="dual-card__meta">
-                    <div className="dual-card__meta-value">
-                        {uiMode === 'temperature' && kelvin ? `${kelvin.toLocaleString()}K` : lightName}
-                    </div>
-                    <div className="dual-card__meta-label">{lightName}</div>
+                    <div className="dual-card__meta-value">{leadingValue}</div>
                 </div>
                 <div className="dual-card__meta dual-card__meta--right">
                     <div className="dual-card__meta-value">{Math.round(brightness)}%</div>
-                    <div className="dual-card__meta-label">{isOn ? 'Brightness' : 'Off'}</div>
                 </div>
             </div>
 

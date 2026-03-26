@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { CardApp } from './App';
 
 function MockHomeAssistant() {
+    const [showPopup, setShowPopup] = useState(false);
     const [mockState, setMockState] = useState({
         state: 'on',
         attributes: {
@@ -72,22 +73,50 @@ function MockHomeAssistant() {
         >
             <div
                 style={{
-                    display: 'grid',
-                    gap: '24px',
-                    maxWidth: '880px',
+                    maxWidth: '520px',
                     margin: '0 auto',
                 }}
             >
-                <CardApp hass={hass} entityId="light.preview" layout="compact" />
+                <CardApp
+                    hass={hass}
+                    entityId="light.preview"
+                    layout="compact"
+                    onCardAction={(action) => {
+                        if (action === 'tap') {
+                            setShowPopup(true);
+                        }
+                    }}
+                />
+            </div>
+
+            {showPopup ? (
                 <div
+                    onClick={() => setShowPopup(false)}
                     style={{
-                        maxWidth: '460px',
-                        margin: '0 auto',
+                        position: 'fixed',
+                        inset: 0,
+                        background: 'rgba(15, 23, 42, 0.18)',
+                        display: 'grid',
+                        placeItems: 'center',
+                        padding: '24px',
+                        boxSizing: 'border-box',
                     }}
                 >
-                    <CardApp hass={hass} entityId="light.preview" layout="expanded" />
+                    <div
+                        onClick={(event) => event.stopPropagation()}
+                        style={{
+                            width: 'min(100%, 460px)',
+                            background: '#ffffff',
+                            borderRadius: '28px',
+                            boxShadow: '0 24px 64px rgba(15, 23, 42, 0.18)',
+                            padding: '20px',
+                            boxSizing: 'border-box',
+                        }}
+                    >
+                        <CardApp hass={hass} entityId="light.preview" layout="expanded" />
+                    </div>
                 </div>
-            </div>
+            ) : null}
         </div>
     );
 }
