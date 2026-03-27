@@ -9,11 +9,12 @@
 .dual-card--compact {
     position: relative;
     display: grid;
+    width: 100%;
     grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
     gap: 10px;
-    min-height: 64px;
-    padding: 12px 14px;
+    min-height: 56px;
+    padding: 8px 12px;
     overflow: hidden;
     background-color: rgba(247, 249, 252, 0.98);
     box-shadow: none;
@@ -509,8 +510,8 @@
 @container (max-width: 380px) {
     .dual-card--compact {
         gap: 8px;
-        padding: 10px 12px;
-        min-height: 58px;
+        padding: 8px 10px;
+        min-height: 52px;
     }
 
     .dual-card__icon-shell {
@@ -534,8 +535,8 @@
 @container (max-width: 250px) {
     .dual-card--compact {
         gap: 8px;
-        padding: 9px 10px;
-        min-height: 54px;
+        padding: 7px 9px;
+        min-height: 48px;
     }
 
     .dual-card__icon-shell {

@@ -3,8 +3,9 @@ import { CompactCard, type CardLayout, type GroupedLightOption, type SceneOption
 import type { HaloMarker } from './components/Halo';
 import { callLightService, getLightState } from './services/ha-connection';
 
-const CONTROL_SEND_INTERVAL_MS = 90;
+const CONTROL_SEND_INTERVAL_MS = 120;
 const CONTROL_SETTLE_DELAY_MS = 220;
+const DISCO_SEND_INTERVAL_MS = 480;
 
 interface QueuedControlCommand {
     entityId: string;
@@ -310,6 +311,7 @@ export function CardApp({
         controlScope === 'individual' && controlledLightEntityId ? controlledLightEntityId : entityId;
     const light = getLightState(hass, activeEntityId) ?? groupLight;
     const lightName = name || light?.attributes.friendly_name || entityId;
+    const activeEntityIdRef = useRef(activeEntityId);
     const supportedColorModes = light?.attributes.supported_color_modes || [];
     const supportsTemperature =
         supportedColorModes.includes('color_temp') ||
@@ -331,6 +333,9 @@ export function CardApp({
     const isUserInteracting = useRef(false);
     const interactionTimeout = useRef<number | null>(null);
     const controlSendTimeout = useRef<number | null>(null);
+    const controlBatchInFlight = useRef(false);
+    const discoSendInterval = useRef<number | null>(null);
+    const discoBatchInFlight = useRef(false);
     const sceneFeedbackTimeout = useRef<number | null>(null);
     const pendingControlCommand = useRef<QueuedControlCommand[] | null>(null);
     const lastSentControlCommand = useRef<QueuedControlCommand[] | null>(null);
@@ -347,6 +352,7 @@ export function CardApp({
     const [selectedSceneName, setSelectedSceneName] = useState<string | null>(null);
     const [sceneFeedbackMessage, setSceneFeedbackMessage] = useState<string | null>(null);
     const [showPopup, setShowPopup] = useState(false);
+    const [isDiscoMode, setIsDiscoMode] = useState(false);
 
     const groupedLights: GroupedLightOption[] = groupedLightIds
         .map((memberId) => {
@@ -372,6 +378,7 @@ export function CardApp({
             };
         })
         .filter((member): member is GroupedLightOption => member != null);
+    const groupedLightIdsKey = groupedLightIds.join('|');
 
     const groupedLightMarkers =
         controlScope === 'group-relative' && groupRelativeLayout.current?.mode === uiMode
@@ -447,6 +454,10 @@ export function CardApp({
     }, [buildGroupRelativeLayout, uiMode]);
 
     useEffect(() => {
+        activeEntityIdRef.current = activeEntityId;
+    }, [activeEntityId]);
+
+    useEffect(() => {
         if (!rootRef.current) return;
 
         const node = rootRef.current;
@@ -469,6 +480,12 @@ export function CardApp({
             if (controlSendTimeout.current) {
                 window.clearTimeout(controlSendTimeout.current);
             }
+            if (discoSendInterval.current) {
+                window.clearInterval(discoSendInterval.current);
+                discoSendInterval.current = null;
+            }
+            controlBatchInFlight.current = false;
+            discoBatchInFlight.current = false;
             if (sceneFeedbackTimeout.current) {
                 window.clearTimeout(sceneFeedbackTimeout.current);
             }
@@ -483,6 +500,13 @@ export function CardApp({
             window.clearTimeout(controlSendTimeout.current);
             controlSendTimeout.current = null;
         }
+        controlBatchInFlight.current = false;
+        if (discoSendInterval.current) {
+            window.clearInterval(discoSendInterval.current);
+            discoSendInterval.current = null;
+        }
+        discoBatchInFlight.current = false;
+        setIsDiscoMode(false);
     }, [activeEntityId, controlScope]);
 
     useEffect(() => {
@@ -494,7 +518,7 @@ export function CardApp({
         if (controlScope === 'group-relative' && groupedLightIds.length) {
             const relativeLayout = ensureGroupRelativeLayout();
 
-            if (relativeLayout && !isUserInteracting.current) {
+            if (relativeLayout && !isUserInteracting.current && !isDiscoMode) {
                 const averageValues = controlValuesFromPosition(
                     relativeLayout.averageX,
                     relativeLayout.averageBrightness,
@@ -510,7 +534,7 @@ export function CardApp({
         }
 
         const nextLight = light ?? groupLight;
-        if (!nextLight || isUserInteracting.current) return;
+        if (!nextLight || isUserInteracting.current || isDiscoMode) return;
 
         setIsOn(nextLight.state === 'on');
 
@@ -579,7 +603,7 @@ export function CardApp({
 
             return 'temperature';
         });
-    }, [activeEntityId, controlScope, ensureGroupRelativeLayout, groupLight, groupedLightIds, hass, light, supportsSpectrum, uiMode]);
+    }, [activeEntityId, controlScope, ensureGroupRelativeLayout, groupLight, groupedLightIds, hass, isDiscoMode, light, supportsSpectrum, uiMode]);
 
     const resolvedLayout: CardLayout =
         layout === 'auto' ? (containerWidth >= 420 ? 'expanded' : 'compact') : layout;
@@ -600,6 +624,37 @@ export function CardApp({
         }
     }, []);
 
+    const stopDiscoMode = useCallback(() => {
+        if (discoSendInterval.current) {
+            window.clearInterval(discoSendInterval.current);
+            discoSendInterval.current = null;
+        }
+        discoBatchInFlight.current = false;
+        setIsDiscoMode(false);
+    }, []);
+
+    const startDiscoMode = useCallback(() => {
+        pendingControlCommand.current = null;
+        lastSentControlCommand.current = null;
+        lastCommandTime.current = 0;
+        if (controlSendTimeout.current) {
+            window.clearTimeout(controlSendTimeout.current);
+            controlSendTimeout.current = null;
+        }
+        controlBatchInFlight.current = false;
+        groupRelativeInteractionSnapshot.current = null;
+        setSelectedSceneName(null);
+        setSceneFeedbackMessage(null);
+        setUiMode('spectrum');
+        setKelvin(null);
+        setHue(0);
+        setSaturation(100);
+        setBrightness(88);
+        setIsOn(true);
+        markInteraction(1200);
+        setIsDiscoMode(true);
+    }, [markInteraction]);
+
     const endControlInteraction = useCallback(() => {
         if (interactionTimeout.current) {
             window.clearTimeout(interactionTimeout.current);
@@ -609,6 +664,69 @@ export function CardApp({
             interactionTimeout.current = null;
         }, CONTROL_SETTLE_DELAY_MS);
     }, []);
+
+    useEffect(() => {
+        if (!isDiscoMode) {
+            if (discoSendInterval.current) {
+                window.clearInterval(discoSendInterval.current);
+                discoSendInterval.current = null;
+            }
+            discoBatchInFlight.current = false;
+            return;
+        }
+
+        let step = 0;
+        const targetIds = groupedLightIds.length ? groupedLightIds : [activeEntityId];
+
+        const applyDiscoFrame = () => {
+            if (!targetIds.length || discoBatchInFlight.current) return;
+
+            const baseHue = (step * 34) % 360;
+            const commands = targetIds.map((targetId, index) => {
+                const hueOffset = targetIds.length > 1 ? (360 / targetIds.length) * index : 0;
+                const brightnessWave = (Math.sin((step + index) * 0.9) + 1) / 2;
+                return {
+                    entityId: targetId,
+                    brightness: 78 + Math.round(brightnessWave * 18),
+                    hsColor: [Math.round((baseHue + hueOffset) % 360), 100] as [number, number],
+                };
+            });
+
+            discoBatchInFlight.current = true;
+            setUiMode('spectrum');
+            setKelvin(null);
+            setIsOn(true);
+            setHue(commands[0]?.hsColor[0] ?? 0);
+            setSaturation(100);
+            setBrightness(
+                Math.round(commands.reduce((total, command) => total + command.brightness, 0) / commands.length)
+            );
+
+            void Promise.all(
+                commands.map((command) =>
+                    callLightService(hass, command.entityId, true, {
+                        brightness: command.brightness,
+                        hs_color: command.hsColor,
+                    })
+                )
+            ).finally(() => {
+                discoBatchInFlight.current = false;
+            });
+
+            step += 1;
+        };
+
+        applyDiscoFrame();
+        discoSendInterval.current = window.setInterval(applyDiscoFrame, DISCO_SEND_INTERVAL_MS);
+
+        return () => {
+            if (discoSendInterval.current) {
+                window.clearInterval(discoSendInterval.current);
+                discoSendInterval.current = null;
+            }
+            discoBatchInFlight.current = false;
+        };
+    }, [activeEntityId, groupedLightIdsKey, hass, isDiscoMode]);
 
     const hasMeaningfulControlDelta = useCallback(
         (left: QueuedControlCommand | null, right: QueuedControlCommand) => {
@@ -650,6 +768,7 @@ export function CardApp({
         (force = false) => {
             const queuedCommand = pendingControlCommand.current;
             if (!queuedCommand) return;
+            if (controlBatchInFlight.current) return;
 
             const now = Date.now();
             const timeUntilNextSend = CONTROL_SEND_INTERVAL_MS - (now - lastCommandTime.current);
@@ -676,16 +795,44 @@ export function CardApp({
             pendingControlCommand.current = null;
             lastSentControlCommand.current = queuedCommand;
             lastCommandTime.current = now;
+            controlBatchInFlight.current = true;
 
-            queuedCommand.forEach((command) => {
-                void callLightService(hass, command.entityId, command.turnOn, {
-                    brightness: command.brightness,
-                    hs_color: command.hsColor,
-                    color_temp_kelvin: command.colorTempKelvin,
+            void Promise.all(
+                queuedCommand.map((command) =>
+                    callLightService(hass, command.entityId, command.turnOn, {
+                        brightness: command.brightness,
+                        hs_color: command.hsColor,
+                        color_temp_kelvin: command.colorTempKelvin,
+                    })
+                )
+            )
+                .catch((error) => {
+                    console.error('[Dual Halo Controller] Failed to apply control batch', {
+                        entityId: activeEntityId,
+                        queuedCommand,
+                        error,
+                    });
+                })
+                .finally(() => {
+                    controlBatchInFlight.current = false;
+
+                    if (!pendingControlCommand.current) return;
+
+                    const nextDelay = Math.max(0, CONTROL_SEND_INTERVAL_MS - (Date.now() - lastCommandTime.current));
+                    if (nextDelay > 0) {
+                        if (!controlSendTimeout.current) {
+                            controlSendTimeout.current = window.setTimeout(() => {
+                                controlSendTimeout.current = null;
+                                flushQueuedControlCommand(true);
+                            }, nextDelay);
+                        }
+                        return;
+                    }
+
+                    flushQueuedControlCommand(true);
                 });
-            });
         },
-        [hass, hasMeaningfulControlBatchDelta]
+        [activeEntityId, hass, hasMeaningfulControlBatchDelta]
     );
 
     const queueControlCommand = useCallback(
@@ -713,6 +860,7 @@ export function CardApp({
 
     const handleControlsChange = useCallback(
         (nextHue: number, nextSaturation: number, nextBrightness: number) => {
+            stopDiscoMode();
             beginControlInteraction();
 
             setSelectedSceneName(null);
@@ -761,8 +909,8 @@ export function CardApp({
             }
 
             const nextCommand = buildQueuedControlCommand(
-                activeEntityId,
-                light,
+                activeEntityIdRef.current,
+                getLightState(hass, activeEntityIdRef.current) ?? light,
                 {
                     brightness: nextBrightness,
                     hue: nextHue,
@@ -775,12 +923,13 @@ export function CardApp({
         },
         [
             beginControlInteraction,
-            activeEntityId,
             controlScope,
             ensureGroupRelativeLayout,
             groupedLightIds,
+            hass,
             light,
             queueControlCommand,
+            stopDiscoMode,
             uiMode,
         ]
     );
@@ -792,31 +941,47 @@ export function CardApp({
     }, [endControlInteraction, flushQueuedControlCommand]);
 
     const handleToggle = useCallback(() => {
+        stopDiscoMode();
         const nextState = !isOn;
         setSelectedSceneName(null);
         setIsOn(nextState);
         markInteraction(1000);
         groupRelativeLayout.current = null;
         groupRelativeInteractionSnapshot.current = null;
-        callLightService(hass, activeEntityId, nextState);
-    }, [activeEntityId, hass, isOn, markInteraction]);
+        callLightService(hass, activeEntityIdRef.current, nextState);
+    }, [hass, isOn, markInteraction, stopDiscoMode]);
+
+    const handleCompactToggle = useCallback(() => {
+        if (!groupLight) return;
+
+        stopDiscoMode();
+        const nextState = groupLight.state !== 'on';
+        setSelectedSceneName(null);
+        setIsOn(nextState);
+        markInteraction(1000);
+        groupRelativeLayout.current = null;
+        groupRelativeInteractionSnapshot.current = null;
+        callLightService(hass, entityId, nextState);
+    }, [entityId, groupLight, hass, markInteraction, stopDiscoMode]);
 
     const handleModeChange = useCallback(
         (mode: 'temperature' | 'spectrum') => {
             if (mode === 'temperature' && !supportsTemperature) return;
             if (mode === 'spectrum' && !supportsSpectrum) return;
 
+            stopDiscoMode();
             setSelectedSceneName(null);
             setUiMode(mode);
             markInteraction(1000);
             groupRelativeLayout.current = null;
             groupRelativeInteractionSnapshot.current = null;
         },
-        [markInteraction, supportsSpectrum, supportsTemperature]
+        [markInteraction, stopDiscoMode, supportsSpectrum, supportsTemperature]
     );
 
     const handleSceneSelect = useCallback(
         async (sceneEntityId: string) => {
+            stopDiscoMode();
             clearInteractionLock();
             groupRelativeLayout.current = null;
             groupRelativeInteractionSnapshot.current = null;
@@ -852,7 +1017,7 @@ export function CardApp({
                 }, 5000);
             }
         },
-        [clearInteractionLock, entityId, hass, sceneOptions]
+        [clearInteractionLock, entityId, hass, sceneOptions, stopDiscoMode]
     );
 
     const handleTap = useCallback(() => {
@@ -867,25 +1032,29 @@ export function CardApp({
     }, [onTapAction, resolvedLayout]);
 
     const handleGroupedLightSelect = useCallback((nextEntityId: string) => {
+        activeEntityIdRef.current = nextEntityId;
+        stopDiscoMode();
         setControlScope('individual');
         setControlledLightEntityId(nextEntityId);
-    }, []);
+    }, [stopDiscoMode]);
 
     const handleGroupedLightToggle = useCallback(
         (nextEntityId: string) => {
             const targetLight = getLightState(hass, nextEntityId);
             if (!targetLight) return;
 
+            stopDiscoMode();
             setSelectedSceneName(null);
             groupRelativeLayout.current = null;
             groupRelativeInteractionSnapshot.current = null;
 
             void callLightService(hass, nextEntityId, targetLight.state !== 'on');
         },
-        [hass]
+        [hass, stopDiscoMode]
     );
 
     const handleControlScopeChange = useCallback((nextScope: 'group' | 'group-relative') => {
+        stopDiscoMode();
         if (nextScope === 'group-relative') {
             const relativeLayout = ensureGroupRelativeLayout();
             if (relativeLayout) {
@@ -903,7 +1072,7 @@ export function CardApp({
         }
 
         setControlScope(nextScope);
-    }, [ensureGroupRelativeLayout, groupLight, light, uiMode]);
+    }, [ensureGroupRelativeLayout, groupLight, light, stopDiscoMode, uiMode]);
 
     if (!groupLight) {
         return (
@@ -927,25 +1096,55 @@ export function CardApp({
         );
     }
 
+    const compactLightName = name || groupLight.attributes.friendly_name || entityId;
+    const compactUiMode =
+        groupLight.attributes.color_temp_kelvin != null ||
+        groupLight.attributes.color_temp != null ||
+        groupLight.attributes.color_mode === 'color_temp' ||
+        !supportsSpectrumForLight(groupLight)
+            ? 'temperature'
+            : supportsSpectrumForLight(groupLight)
+              ? 'spectrum'
+              : uiMode;
+    const compactValues = getMarkerControlValues(groupLight, compactUiMode);
+    const compactKelvin =
+        compactUiMode === 'temperature'
+            ? groupLight.attributes.color_temp_kelvin ||
+              (groupLight.attributes.color_temp != null
+                  ? Math.round(1000000 / groupLight.attributes.color_temp)
+                  : kelvinFromXPosition(
+                        xFractionFromHueSat(compactValues.hue, compactValues.saturation, 'temperature'),
+                        groupLight
+                    ))
+            : null;
+    const compactBrightness = compactValues.brightness;
+    const compactHue = compactValues.hue;
+    const compactSaturation = compactValues.saturation;
+    const compactIsOn = groupLight.state === 'on';
+
     return (
         <div ref={rootRef}>
             <CompactCard
                 layout={resolvedLayout}
-                lightName={lightName}
+                lightName={resolvedLayout === 'compact' ? compactLightName : lightName}
                 icon={icon}
-                isOn={isOn}
-                hue={hue}
-                saturation={saturation}
-                brightness={brightness}
-                kelvin={kelvin}
-                uiMode={uiMode}
+                isOn={resolvedLayout === 'compact' ? compactIsOn : isOn}
+                hue={resolvedLayout === 'compact' ? compactHue : hue}
+                saturation={resolvedLayout === 'compact' ? compactSaturation : saturation}
+                brightness={resolvedLayout === 'compact' ? compactBrightness : brightness}
+                kelvin={resolvedLayout === 'compact' ? compactKelvin : kelvin}
+                uiMode={resolvedLayout === 'compact' ? compactUiMode : uiMode}
                 canUseTemperature={supportsTemperature}
                 canUseSpectrum={supportsSpectrum}
                 onModeChange={handleModeChange}
                 onControlsChange={handleControlsChange}
                 onControlInteractionStart={beginControlInteraction}
                 onControlInteractionEnd={handleControlInteractionEnd}
-                onToggle={handleToggle}
+                isDiscoMode={isDiscoMode}
+                onDiscoModeTrigger={startDiscoMode}
+                onDiscoModeExit={stopDiscoMode}
+                onPadMarkerSelect={groupedLights.length ? handleGroupedLightSelect : undefined}
+                onToggle={resolvedLayout === 'compact' ? handleCompactToggle : handleToggle}
                 sceneOptions={sceneOptions}
                 selectedSceneName={selectedSceneName}
                 sceneFeedbackMessage={sceneFeedbackMessage}
@@ -1004,6 +1203,10 @@ export function CardApp({
                             onControlsChange={handleControlsChange}
                             onControlInteractionStart={beginControlInteraction}
                             onControlInteractionEnd={handleControlInteractionEnd}
+                            isDiscoMode={isDiscoMode}
+                            onDiscoModeTrigger={startDiscoMode}
+                            onDiscoModeExit={stopDiscoMode}
+                            onPadMarkerSelect={groupedLights.length ? handleGroupedLightSelect : undefined}
                             onToggle={handleToggle}
                             sceneOptions={sceneOptions}
                             selectedSceneName={selectedSceneName}

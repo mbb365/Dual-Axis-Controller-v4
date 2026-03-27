@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import classNames from 'classnames';
 
 interface HaloProps {
@@ -10,6 +10,10 @@ interface HaloProps {
     onChange: (h: number, s: number, b: number) => void;
     onInteractionStart?: () => void;
     onInteractionEnd?: () => void;
+    isDiscoMode?: boolean;
+    onDiscoModeTrigger?: () => void;
+    onDiscoModeExit?: () => void;
+    onMarkerSelect?: (entityId: string) => void;
     onToggle: () => void;
     mode: 'temperature' | 'spectrum';
 }
@@ -36,6 +40,15 @@ interface HaloPulse {
     id: number;
     xPercent: number;
     yPercent: number;
+}
+
+const SAFE_CONTROL_UPDATE_INTERVAL_MS = 120;
+const DISCO_OVERSPEED_THRESHOLD = 140;
+const DISCO_OVERSPEED_STREAK_MS = 650;
+
+interface HaloVelocitySample {
+    at: number;
+    selection: HaloSelection;
 }
 
 const HALO_CSS = `
@@ -180,6 +193,10 @@ const HALO_CSS = `
         0 3px 8px rgba(15, 23, 42, 0.08);
 }
 
+.halo__pad.is-disco {
+    cursor: pointer;
+}
+
 .halo__indicator {
     position: absolute;
     width: 36px;
@@ -196,7 +213,14 @@ const HALO_CSS = `
         box-shadow 220ms ease;
 }
 
+.halo__indicator.is-live {
+    transition: box-shadow 220ms ease;
+}
+
 .halo__group-indicator {
+    appearance: none;
+    -webkit-appearance: none;
+    padding: 0;
     position: absolute;
     width: 18px;
     height: 18px;
@@ -206,15 +230,22 @@ const HALO_CSS = `
     box-shadow:
         0 0 0 1px rgba(15, 23, 42, 0.08),
         0 8px 16px rgba(15, 23, 42, 0.12);
-    pointer-events: none;
+    pointer-events: auto;
     z-index: 2;
     opacity: 0.88;
+    cursor: grab;
+    background: transparent;
     transition:
         left 280ms cubic-bezier(0.22, 0.68, 0.2, 1),
         top 280ms cubic-bezier(0.22, 0.68, 0.2, 1),
         transform 220ms ease,
         opacity 220ms ease,
         box-shadow 220ms ease;
+}
+
+.halo__group-indicator:focus-visible {
+    outline: 2px solid rgba(59, 130, 246, 0.9);
+    outline-offset: 2px;
 }
 
 .halo__group-indicator.is-active {
@@ -236,6 +267,96 @@ const HALO_CSS = `
         0 6px 12px rgba(15, 23, 42, 0.08);
 }
 
+.halo__disco-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    border-radius: 18px;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+    padding: 22px;
+    pointer-events: none;
+}
+
+.halo__disco-overlay::before,
+.halo__disco-overlay::after {
+    content: '';
+    position: absolute;
+    inset: -18%;
+    pointer-events: none;
+}
+
+.halo__disco-overlay::before {
+    background:
+        conic-gradient(from 0deg, rgba(255, 82, 82, 0.82), rgba(255, 193, 7, 0.8), rgba(94, 234, 212, 0.78), rgba(96, 165, 250, 0.82), rgba(244, 114, 182, 0.82), rgba(255, 82, 82, 0.82));
+    filter: blur(28px) saturate(130%);
+    opacity: 0.88;
+    animation: halo-disco-spin 8s linear infinite, halo-disco-breathe 2.2s ease-in-out infinite alternate;
+}
+
+.halo__disco-overlay::after {
+    inset: 0;
+    background:
+        radial-gradient(circle at 50% 24%, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.08) 18%, rgba(255, 255, 255, 0) 48%),
+        linear-gradient(180deg, rgba(11, 18, 32, 0.18) 0%, rgba(11, 18, 32, 0.3) 100%);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.halo__disco-message {
+    position: relative;
+    z-index: 1;
+    max-width: 84%;
+    padding: 18px 20px;
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    box-shadow:
+        0 12px 34px rgba(15, 23, 42, 0.16),
+        inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    color: #f8fafc;
+    text-align: center;
+}
+
+.halo__disco-title {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 0.98rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+
+.halo__disco-copy {
+    margin: 0;
+    font-size: 0.88rem;
+    line-height: 1.45;
+    font-weight: 500;
+    color: rgba(248, 250, 252, 0.96);
+}
+
+@keyframes halo-disco-spin {
+    from {
+        transform: rotate(0deg) scale(1);
+    }
+
+    to {
+        transform: rotate(360deg) scale(1.06);
+    }
+}
+
+@keyframes halo-disco-breathe {
+    from {
+        opacity: 0.72;
+        filter: blur(24px) saturate(120%);
+    }
+
+    to {
+        opacity: 0.96;
+        filter: blur(34px) saturate(138%);
+    }
+}
+
 @container (max-width: 420px) {
     .halo__indicator {
         width: 30px;
@@ -251,6 +372,19 @@ const HALO_CSS = `
     .halo__group-indicator.is-active {
         width: 20px;
         height: 20px;
+    }
+
+    .halo__disco-message {
+        max-width: 90%;
+        padding: 16px 16px;
+    }
+
+    .halo__disco-title {
+        font-size: 0.9rem;
+    }
+
+    .halo__disco-copy {
+        font-size: 0.8rem;
     }
 }
 
@@ -352,9 +486,9 @@ function buildTemperatureIndicatorColor(hue: number, saturation: number, brightn
         return `hsl(30, ${colorSaturation}%, ${Math.min(94, colorLightness)}%)`;
     }
 
-    const colorSaturation = 14 + normalizedSaturation * 58;
-    const colorLightness = 94 - normalizedSaturation * 12 + normalizedBrightness * 4;
-    return `hsl(${hue}, ${colorSaturation}%, ${Math.min(97, colorLightness)}%)`;
+    const colorSaturation = 18 + normalizedSaturation * 34;
+    const colorLightness = 92 - normalizedSaturation * 8 + normalizedBrightness * 4;
+    return `hsl(200, ${colorSaturation}%, ${Math.min(96, colorLightness)}%)`;
 }
 
 function buildIndicatorShadow(hue: number, saturation: number, brightness: number, mode: 'temperature' | 'spectrum') {
@@ -382,13 +516,42 @@ export function Halo({
     onChange,
     onInteractionStart,
     onInteractionEnd,
+    isDiscoMode = false,
+    onDiscoModeTrigger,
+    onDiscoModeExit,
+    onMarkerSelect,
     onToggle,
     mode,
 }: HaloProps) {
     const trackpadRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [pulse, setPulse] = useState<HaloPulse | null>(null);
+    const [dragSelection, setDragSelection] = useState<HaloSelection | null>(null);
+    const [dragSourceMarkerId, setDragSourceMarkerId] = useState<string | null>(null);
     const pulseIdRef = useRef(0);
+    const lastEmittedSelectionRef = useRef<HaloSelection | null>(null);
+    const lastVelocitySampleRef = useRef<HaloVelocitySample | null>(null);
+    const overspeedStartedAtRef = useRef<number | null>(null);
+
+    const resetSpeedRuleTracking = () => {
+        lastVelocitySampleRef.current = null;
+        overspeedStartedAtRef.current = null;
+    };
+
+    useEffect(() => {
+        return () => {
+            resetSpeedRuleTracking();
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!isDiscoMode) return;
+        setIsDragging(false);
+        setDragSelection(null);
+        setDragSourceMarkerId(null);
+        lastEmittedSelectionRef.current = null;
+        resetSpeedRuleTracking();
+    }, [isDiscoMode]);
 
     const selectionFromPosition = (event: React.PointerEvent): HaloSelection | null => {
         if (!trackpadRef.current) return null;
@@ -438,40 +601,147 @@ export function Halo({
         });
     };
 
-    const updateFromPosition = (event: React.PointerEvent) => {
+    const hasMeaningfulSelectionDelta = (nextSelection: HaloSelection) => {
+        const previousSelection = lastEmittedSelectionRef.current;
+        if (!previousSelection) return true;
+
+        return (
+            Math.abs(nextSelection.xPercent - previousSelection.xPercent) >= 1.2 ||
+            Math.abs(nextSelection.yPercent - previousSelection.yPercent) >= 1.2 ||
+            Math.abs(nextSelection.brightness - previousSelection.brightness) >= 2 ||
+            Math.abs(nextSelection.hue - previousSelection.hue) >= 3 ||
+            Math.abs(nextSelection.saturation - previousSelection.saturation) >= 3
+        );
+    };
+
+    const updateFromPosition = (event: React.PointerEvent, force = false) => {
         const selection = selectionFromPosition(event);
         if (!selection) return;
 
+        if (!force && !hasMeaningfulSelectionDelta(selection)) {
+            return selection;
+        }
+
+        const now = performance.now();
+        if (force) {
+            lastVelocitySampleRef.current = { at: now, selection };
+            overspeedStartedAtRef.current = null;
+        } else {
+            const previousSample = lastVelocitySampleRef.current;
+
+            if (previousSample) {
+                const deltaTime = now - previousSample.at;
+                const deltaX = selection.xPercent - previousSample.selection.xPercent;
+                const deltaY = selection.yPercent - previousSample.selection.yPercent;
+                const distance = Math.hypot(deltaX, deltaY);
+                const velocity = deltaTime > 0 ? distance / (deltaTime / 1000) : Infinity;
+                const isOverspeed =
+                    deltaTime < SAFE_CONTROL_UPDATE_INTERVAL_MS && velocity > DISCO_OVERSPEED_THRESHOLD;
+
+                if (isOverspeed) {
+                    if (overspeedStartedAtRef.current == null) {
+                        overspeedStartedAtRef.current = now;
+                    } else if (now - overspeedStartedAtRef.current >= DISCO_OVERSPEED_STREAK_MS) {
+                        setIsDragging(false);
+                        setDragSelection(null);
+                        setDragSourceMarkerId(null);
+                        lastEmittedSelectionRef.current = null;
+                        resetSpeedRuleTracking();
+                        onInteractionEnd?.();
+                        onDiscoModeTrigger?.();
+                        return selection;
+                    }
+                } else {
+                    overspeedStartedAtRef.current = null;
+                }
+            } else {
+                overspeedStartedAtRef.current = null;
+            }
+
+            lastVelocitySampleRef.current = { at: now, selection };
+        }
+
+        lastEmittedSelectionRef.current = selection;
+        setDragSelection(selection);
         onChange(selection.hue, selection.saturation, selection.brightness);
         return selection;
     };
 
     const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+        if (isDiscoMode) {
+            setIsDragging(false);
+            lastEmittedSelectionRef.current = null;
+            resetSpeedRuleTracking();
+            onDiscoModeExit?.();
+            return;
+        }
+
         if (!isOn) {
             onToggle();
             return;
         }
 
+        resetSpeedRuleTracking();
         setIsDragging(true);
+        setDragSourceMarkerId(null);
         onInteractionStart?.();
         event.currentTarget.setPointerCapture(event.pointerId);
-        const selection = updateFromPosition(event);
+        const selection = updateFromPosition(event, true);
         if (selection) {
             triggerPulse(selection);
         }
     };
 
+    const handleMarkerPointerDown = (marker: HaloMarker, event: React.PointerEvent<HTMLButtonElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (isDiscoMode) {
+            resetSpeedRuleTracking();
+            onDiscoModeExit?.();
+            return;
+        }
+
+        onMarkerSelect?.(marker.entityId);
+
+        if (!marker.isOn) {
+            return;
+        }
+
+        resetSpeedRuleTracking();
+        lastEmittedSelectionRef.current = null;
+        setDragSourceMarkerId(marker.entityId);
+        const markerSelection = {
+            brightness: marker.brightness,
+            hue: marker.hue,
+            saturation: marker.saturation,
+            xPercent: xPosFromHueSat(marker.hue, marker.saturation, mode),
+            yPercent: 100 - marker.brightness,
+        };
+        setDragSelection(markerSelection);
+        setIsDragging(true);
+        onInteractionStart?.();
+        trackpadRef.current?.setPointerCapture(event.pointerId);
+    };
+
     const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-        if (!isDragging || !isOn) return;
+        if (!isDragging || !isOn || isDiscoMode) return;
         updateFromPosition(event);
     };
 
     const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
         if (isDragging) {
-            event.currentTarget.releasePointerCapture(event.pointerId);
+            updateFromPosition(event, true);
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                event.currentTarget.releasePointerCapture(event.pointerId);
+            }
             onInteractionEnd?.();
         }
         setIsDragging(false);
+        setDragSelection(null);
+        setDragSourceMarkerId(null);
+        lastEmittedSelectionRef.current = null;
+        resetSpeedRuleTracking();
     };
 
     const padBackground =
@@ -479,7 +749,7 @@ export function Halo({
             ? 'radial-gradient(circle at 50% 50%, rgba(196, 181, 253, 0.34) 0%, rgba(196, 181, 253, 0.14) 26%, rgba(217, 222, 230, 0.08) 48%, rgba(216, 220, 228, 0) 72%), linear-gradient(145deg, rgba(239, 241, 245, 0.98) 0%, rgba(223, 227, 234, 0.96) 54%, rgba(210, 214, 222, 0.98) 100%)'
             : mode === 'spectrum'
             ? 'radial-gradient(circle at 14% 18%, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.08) 14%, rgba(255, 255, 255, 0) 34%), linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.14) 62%, rgba(250, 251, 253, 0.82) 100%), linear-gradient(90deg, rgba(255, 107, 107, 0.96) 0%, rgba(255, 209, 102, 0.86) 18%, rgba(149, 209, 111, 0.84) 36%, rgba(86, 207, 225, 0.82) 54%, rgba(123, 109, 255, 0.84) 74%, rgba(255, 119, 200, 0.92) 100%)'
-            : 'radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.16) 15%, rgba(255, 255, 255, 0) 38%), linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.14) 62%, rgba(250, 251, 253, 0.84) 100%), linear-gradient(90deg, rgba(101, 175, 239, 0.94) 0%, rgba(222, 236, 247, 0.7) 48%, rgba(255, 214, 84, 0.92) 100%)';
+            : 'radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.16) 15%, rgba(255, 255, 255, 0) 38%), linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.14) 62%, rgba(250, 251, 253, 0.84) 100%), linear-gradient(90deg, rgba(170, 204, 231, 0.82) 0%, rgba(243, 247, 250, 0.74) 48%, rgba(255, 218, 102, 0.9) 100%)';
 
     const indicatorColor =
         mode === 'spectrum'
@@ -493,13 +763,21 @@ export function Halo({
               ? `hsl(${marker.hue}, 100%, 50%)`
               : buildTemperatureIndicatorColor(marker.hue, marker.saturation, marker.brightness);
 
+    const visibleSelection = dragSelection ?? {
+        brightness,
+        hue,
+        saturation,
+        xPercent: xPosFromHueSat(hue, saturation, mode),
+        yPercent: 100 - brightness,
+    };
+
     return (
         <div className="halo">
             <style>{HALO_CSS}</style>
             <div className="halo__pad-shell">
                 <div
                     ref={trackpadRef}
-                    className={classNames('halo__pad', { 'is-off': !isOn })}
+                    className={classNames('halo__pad', { 'is-off': !isOn, 'is-disco': isDiscoMode })}
                     onPointerDown={handlePointerDown}
                     onPointerMove={handlePointerMove}
                     onPointerUp={handlePointerUp}
@@ -510,20 +788,43 @@ export function Halo({
                     }}
                 >
                 </div>
-                {markers.map((marker) => (
-                    <div
-                        key={marker.entityId}
-                        className={classNames('halo__group-indicator', {
-                            'is-active': marker.isActive,
-                            'is-off': !marker.isOn,
-                        })}
-                        style={{
-                            left: `${xPosFromHueSat(marker.hue, marker.saturation, mode)}%`,
-                            top: `${100 - marker.brightness}%`,
-                            background: markerColor(marker),
-                        }}
-                    />
-                ))}
+                {isDiscoMode ? (
+                    <div className="halo__disco-overlay">
+                        <div className="halo__disco-message">
+                            <strong className="halo__disco-title">DISCO MODE!</strong>
+                            <p className="halo__disco-copy">
+                                Are you hosting a Karaoke party?!
+                                <br />
+                                <br />
+                                The system can&apos;t quite handle so many inputs so quickly :(
+                                <br />
+                                <br />
+                                Try tapping / clicking on a single point and waiting for the system to respond.
+                                It&apos;s pretty much magic.
+                            </p>
+                        </div>
+                    </div>
+                ) : null}
+                {!isDiscoMode
+                    ? markers.map((marker) => (
+                          marker.entityId === dragSourceMarkerId ? null :
+                          <button
+                              key={marker.entityId}
+                              type="button"
+                              className={classNames('halo__group-indicator', {
+                                  'is-active': marker.isActive,
+                                  'is-off': !marker.isOn,
+                              })}
+                              aria-label={`Control ${marker.entityId}`}
+                              onPointerDown={(event) => handleMarkerPointerDown(marker, event)}
+                              style={{
+                                  left: `${xPosFromHueSat(marker.hue, marker.saturation, mode)}%`,
+                                  top: `${100 - marker.brightness}%`,
+                                  background: markerColor(marker),
+                              }}
+                          />
+                      ))
+                    : null}
                 {pulse ? (
                     <div
                         key={pulse.id}
@@ -538,14 +839,26 @@ export function Halo({
                         }}
                     />
                 ) : null}
-                {isOn ? (
+                {isOn && !isDiscoMode ? (
                     <div
-                        className="halo__indicator"
+                        className={classNames('halo__indicator', { 'is-live': !!dragSelection })}
                         style={{
-                            left: `${xPosFromHueSat(hue, saturation, mode)}%`,
-                            top: `${100 - brightness}%`,
-                            background: indicatorColor,
-                            boxShadow: buildIndicatorShadow(hue, saturation, brightness, mode),
+                            left: `${visibleSelection.xPercent}%`,
+                            top: `${visibleSelection.yPercent}%`,
+                            background:
+                                mode === 'spectrum'
+                                    ? `hsl(${visibleSelection.hue}, 100%, 50%)`
+                                    : buildTemperatureIndicatorColor(
+                                          visibleSelection.hue,
+                                          visibleSelection.saturation,
+                                          visibleSelection.brightness
+                                      ),
+                            boxShadow: buildIndicatorShadow(
+                                visibleSelection.hue,
+                                visibleSelection.saturation,
+                                visibleSelection.brightness,
+                                mode
+                            ),
                         }}
                     />
                 ) : null}

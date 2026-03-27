@@ -36,6 +36,10 @@ interface CompactCardProps {
     onControlsChange: (h: number, s: number, b: number) => void;
     onControlInteractionStart?: () => void;
     onControlInteractionEnd?: () => void;
+    isDiscoMode?: boolean;
+    onDiscoModeTrigger?: () => void;
+    onDiscoModeExit?: () => void;
+    onPadMarkerSelect?: (entityId: string) => void;
     onToggle: () => void;
     sceneOptions?: SceneOption[];
     selectedSceneName?: string | null;
@@ -182,6 +186,64 @@ function buildCompactBackground(
     return `radial-gradient(circle at 20% 24%, ${whiteLift} 0%, rgba(255, 255, 255, 0.12) 22%, transparent 50%), linear-gradient(135deg, ${startTone} 0%, ${midTone} 42%, ${endTone} 100%)`;
 }
 
+function buildGroupedCompactBackground(groupedLights: GroupedLightOption[]) {
+    const activeLights = groupedLights
+        .filter((light) => light.isOn && light.previewBrightness > 0)
+        .sort((left, right) => right.previewBrightness - left.previewBrightness)
+        .slice(0, 4);
+
+    if (activeLights.length < 2) {
+        return null;
+    }
+
+    const anchorSets =
+        activeLights.length === 2
+            ? [
+                  { x: 18, y: 42 },
+                  { x: 82, y: 54 },
+              ]
+            : activeLights.length === 3
+              ? [
+                    { x: 18, y: 24 },
+                    { x: 82, y: 26 },
+                    { x: 46, y: 76 },
+                ]
+              : [
+                    { x: 16, y: 24 },
+                    { x: 82, y: 22 },
+                    { x: 34, y: 78 },
+                    { x: 78, y: 72 },
+                ];
+
+    const colorLayers = activeLights.map((light, index) => {
+        const brightnessRatio = Math.max(0, Math.min(1, light.previewBrightness / 100));
+        const coreAlpha = 0.16 + brightnessRatio * 0.18;
+        const midAlpha = 0.08 + brightnessRatio * 0.1;
+        const radius = 46 + brightnessRatio * 16;
+        const anchor = anchorSets[index] ?? anchorSets[anchorSets.length - 1];
+
+        return `radial-gradient(circle at ${anchor.x}% ${anchor.y}%, ${buildReflectionColor(
+            true,
+            light.previewHue,
+            light.previewSaturation,
+            light.previewBrightness,
+            light.previewMode,
+            coreAlpha
+        )} 0%, ${buildReflectionColor(
+            true,
+            light.previewHue,
+            light.previewSaturation,
+            light.previewBrightness,
+            light.previewMode,
+            midAlpha
+        )} ${Math.round(radius * 0.46)}%, transparent ${Math.round(radius)}%)`;
+    });
+
+    return `radial-gradient(circle at 20% 22%, rgba(255, 255, 255, 0.82) 0%, rgba(255, 255, 255, 0.14) 24%, transparent 52%), ${colorLayers.join(
+        ', '
+    )}, linear-gradient(135deg, rgba(255, 255, 255, 0.92) 0%, rgba(249, 251, 254, 0.9) 48%, rgba(242, 246, 251, 0.96) 100%)`;
+}
+
 function buildIconBackground(
     isOn: boolean,
     hue: number,
@@ -248,6 +310,10 @@ export function CompactCard({
     onControlsChange,
     onControlInteractionStart,
     onControlInteractionEnd,
+    isDiscoMode,
+    onDiscoModeTrigger,
+    onDiscoModeExit,
+    onPadMarkerSelect,
     onToggle,
     sceneOptions = [],
     selectedSceneName,
@@ -309,6 +375,8 @@ export function CompactCard({
             : isOn
               ? `${Math.round(brightness)}% at ${leadingValue}`
               : 'Off';
+    const compactBackground =
+        buildGroupedCompactBackground(groupedLights) ?? buildCompactBackground(isOn, hue, saturation, brightness, uiMode);
 
     const clearHold = () => {
         if (holdTimer.current) {
@@ -396,7 +464,7 @@ export function CompactCard({
                 onClick={handleClick}
                 onKeyDown={handleKeyDown}
                 style={{
-                    background: buildCompactBackground(isOn, hue, saturation, brightness, uiMode),
+                    background: compactBackground,
                     color: 'var(--primary-text-color, #111827)',
                 }}
             >
@@ -447,6 +515,10 @@ export function CompactCard({
                 onChange={onControlsChange}
                 onInteractionStart={onControlInteractionStart}
                 onInteractionEnd={onControlInteractionEnd}
+                isDiscoMode={isDiscoMode}
+                onDiscoModeTrigger={onDiscoModeTrigger}
+                onDiscoModeExit={onDiscoModeExit}
+                onMarkerSelect={onPadMarkerSelect}
                 onToggle={onToggle}
                 mode={uiMode}
             />
