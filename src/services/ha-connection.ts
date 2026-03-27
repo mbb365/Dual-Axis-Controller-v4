@@ -7,6 +7,8 @@ export interface LightState {
     state: string;
     attributes: {
         friendly_name?: string;
+        entity_id?: string[];
+        lights?: string[];
         brightness?: number;
         hs_color?: [number, number];
         color_temp?: number;

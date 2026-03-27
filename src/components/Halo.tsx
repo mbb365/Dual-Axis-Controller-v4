@@ -6,11 +6,21 @@ interface HaloProps {
     saturation: number;
     brightness: number;
     isOn: boolean;
+    markers?: HaloMarker[];
     onChange: (h: number, s: number, b: number) => void;
     onInteractionStart?: () => void;
     onInteractionEnd?: () => void;
     onToggle: () => void;
     mode: 'temperature' | 'spectrum';
+}
+
+export interface HaloMarker {
+    entityId: string;
+    hue: number;
+    saturation: number;
+    brightness: number;
+    isOn: boolean;
+    isActive?: boolean;
 }
 
 interface HaloSelection {
@@ -186,11 +196,61 @@ const HALO_CSS = `
         box-shadow 220ms ease;
 }
 
+.halo__group-indicator {
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    transform: translate(-50%, -50%);
+    border: 2px solid rgba(255, 255, 255, 0.84);
+    box-shadow:
+        0 0 0 1px rgba(15, 23, 42, 0.08),
+        0 8px 16px rgba(15, 23, 42, 0.12);
+    pointer-events: none;
+    z-index: 2;
+    opacity: 0.88;
+    transition:
+        left 280ms cubic-bezier(0.22, 0.68, 0.2, 1),
+        top 280ms cubic-bezier(0.22, 0.68, 0.2, 1),
+        transform 220ms ease,
+        opacity 220ms ease,
+        box-shadow 220ms ease;
+}
+
+.halo__group-indicator.is-active {
+    width: 22px;
+    height: 22px;
+    opacity: 0.96;
+    border-color: rgba(255, 255, 255, 0.94);
+    box-shadow:
+        0 0 0 1px rgba(15, 23, 42, 0.1),
+        0 10px 18px rgba(15, 23, 42, 0.16);
+}
+
+.halo__group-indicator.is-off {
+    background: rgba(203, 213, 225, 0.42) !important;
+    border-color: rgba(255, 255, 255, 0.72);
+    opacity: 0.68;
+    box-shadow:
+        0 0 0 1px rgba(15, 23, 42, 0.05),
+        0 6px 12px rgba(15, 23, 42, 0.08);
+}
+
 @container (max-width: 420px) {
     .halo__indicator {
         width: 30px;
         height: 30px;
         border-width: 3px;
+    }
+
+    .halo__group-indicator {
+        width: 16px;
+        height: 16px;
+    }
+
+    .halo__group-indicator.is-active {
+        width: 20px;
+        height: 20px;
     }
 }
 
@@ -218,6 +278,28 @@ const HALO_CSS = `
             inset 0 1px 0 rgba(255, 255, 255, 0.07),
             inset 0 0 42px rgba(168, 85, 247, 0.08),
             0 3px 8px rgba(0, 0, 0, 0.18);
+    }
+
+    .halo__group-indicator {
+        border-color: rgba(255, 255, 255, 0.58);
+        box-shadow:
+            0 0 0 1px rgba(255, 255, 255, 0.06),
+            0 8px 16px rgba(0, 0, 0, 0.18);
+    }
+
+    .halo__group-indicator.is-active {
+        border-color: rgba(255, 255, 255, 0.74);
+        box-shadow:
+            0 0 0 1px rgba(255, 255, 255, 0.08),
+            0 10px 20px rgba(0, 0, 0, 0.22);
+    }
+
+    .halo__group-indicator.is-off {
+        background: rgba(100, 116, 139, 0.32) !important;
+        border-color: rgba(255, 255, 255, 0.44);
+        box-shadow:
+            0 0 0 1px rgba(255, 255, 255, 0.04),
+            0 6px 12px rgba(0, 0, 0, 0.16);
     }
 
     .halo__pulse::before {
@@ -250,6 +332,11 @@ function xPosFromHueSat(hue: number, sat: number, mode: 'temperature' | 'spectru
     return (0.5 + sat / 200) * 100;
 }
 
+function isWarmTemperatureHue(hue: number) {
+    const normalizedHue = ((hue % 360) + 360) % 360;
+    return Math.abs(normalizedHue - 38) <= Math.abs(normalizedHue - 210);
+}
+
 function buildTemperatureIndicatorColor(hue: number, saturation: number, brightness: number) {
     const normalizedSaturation = Math.max(0, Math.min(1, saturation / 100));
     const normalizedBrightness = Math.max(0, Math.min(1, brightness / 100));
@@ -257,6 +344,12 @@ function buildTemperatureIndicatorColor(hue: number, saturation: number, brightn
     if (normalizedSaturation < 0.12) {
         const whiteLightness = 97 + normalizedBrightness * 2;
         return `hsl(0, 0%, ${Math.min(99, whiteLightness)}%)`;
+    }
+
+    if (isWarmTemperatureHue(hue)) {
+        const colorSaturation = 22 + normalizedSaturation * 70;
+        const colorLightness = 88 - normalizedSaturation * 10 + normalizedBrightness * 4;
+        return `hsl(30, ${colorSaturation}%, ${Math.min(94, colorLightness)}%)`;
     }
 
     const colorSaturation = 14 + normalizedSaturation * 58;
@@ -285,6 +378,7 @@ export function Halo({
     saturation,
     brightness,
     isOn,
+    markers = [],
     onChange,
     onInteractionStart,
     onInteractionEnd,
@@ -392,6 +486,13 @@ export function Halo({
             ? `hsl(${hue}, 100%, 50%)`
             : buildTemperatureIndicatorColor(hue, saturation, brightness);
 
+    const markerColor = (marker: HaloMarker) =>
+        !marker.isOn
+            ? 'rgba(203, 213, 225, 0.42)'
+            : mode === 'spectrum'
+              ? `hsl(${marker.hue}, 100%, 50%)`
+              : buildTemperatureIndicatorColor(marker.hue, marker.saturation, marker.brightness);
+
     return (
         <div className="halo">
             <style>{HALO_CSS}</style>
@@ -409,6 +510,20 @@ export function Halo({
                     }}
                 >
                 </div>
+                {markers.map((marker) => (
+                    <div
+                        key={marker.entityId}
+                        className={classNames('halo__group-indicator', {
+                            'is-active': marker.isActive,
+                            'is-off': !marker.isOn,
+                        })}
+                        style={{
+                            left: `${xPosFromHueSat(marker.hue, marker.saturation, mode)}%`,
+                            top: `${100 - marker.brightness}%`,
+                            background: markerColor(marker),
+                        }}
+                    />
+                ))}
                 {pulse ? (
                     <div
                         key={pulse.id}

@@ -49,26 +49,87 @@ const demoScenes = {
     },
 } as const;
 
-function MockHomeAssistant() {
-    const [mockState, setMockState] = useState({
-        state: 'on',
+const groupedLightIds = ['light.preview_floor', 'light.preview_desk', 'light.preview_corner'] as const;
+
+function buildGroupState(memberStates: Record<string, any>) {
+    const memberValues = groupedLightIds.map((entityId) => memberStates[entityId]).filter(Boolean);
+    const isOn = memberValues.some((member) => member.state === 'on');
+    const brightnessValues = memberValues
+        .map((member) => member.attributes?.brightness)
+        .filter((value): value is number => typeof value === 'number');
+    const brightness = brightnessValues.length
+        ? Math.round(brightnessValues.reduce((total, value) => total + value, 0) / brightnessValues.length)
+        : 0;
+    const primaryMember = memberValues[0];
+
+    return {
+        state: isOn ? 'on' : 'off',
         attributes: {
-            friendly_name: 'Living room',
-            brightness: 237,
-            color_mode: 'color_temp',
-            color_temp: 412,
-            color_temp_kelvin: 2430,
+            friendly_name: 'Living room group',
+            entity_id: [...groupedLightIds],
+            brightness,
+            color_mode: primaryMember?.attributes?.color_mode ?? 'color_temp',
+            color_temp: primaryMember?.attributes?.color_temp ?? 412,
+            color_temp_kelvin: primaryMember?.attributes?.color_temp_kelvin ?? 2430,
             min_mireds: 153,
             max_mireds: 500,
-            hs_color: [38, 62] as [number, number],
+            hs_color: primaryMember?.attributes?.hs_color ?? ([38, 62] as [number, number]),
             supported_color_modes: ['color_temp', 'hs'],
+        },
+    };
+}
+
+function MockHomeAssistant() {
+    const [memberStates, setMemberStates] = useState({
+        'light.preview_floor': {
+            state: 'on',
+            attributes: {
+                friendly_name: 'Floor lamp',
+                brightness: 237,
+                color_mode: 'color_temp',
+                color_temp: 412,
+                color_temp_kelvin: 2430,
+                min_mireds: 153,
+                max_mireds: 500,
+                hs_color: [38, 62] as [number, number],
+                supported_color_modes: ['color_temp', 'hs'],
+            },
+        },
+        'light.preview_desk': {
+            state: 'on',
+            attributes: {
+                friendly_name: 'Desk light',
+                brightness: 190,
+                color_mode: 'color_temp',
+                color_temp: 355,
+                color_temp_kelvin: 2817,
+                min_mireds: 153,
+                max_mireds: 500,
+                hs_color: [42, 38] as [number, number],
+                supported_color_modes: ['color_temp', 'hs'],
+            },
+        },
+        'light.preview_corner': {
+            state: 'off',
+            attributes: {
+                friendly_name: 'Corner lamp',
+                brightness: 0,
+                color_mode: 'hs',
+                color_temp: null as unknown as number,
+                color_temp_kelvin: null as unknown as number,
+                min_mireds: 153,
+                max_mireds: 500,
+                hs_color: [282, 72] as [number, number],
+                supported_color_modes: ['color_temp', 'hs'],
+            },
         },
     });
 
     const hass = useMemo(
         () => ({
             states: {
-                'light.preview': mockState,
+                'light.preview_group': buildGroupState(memberStates),
+                ...memberStates,
                 ...Object.fromEntries(
                     Object.entries(demoScenes).map(([entityId, scene]) => [
                         entityId,
@@ -86,55 +147,78 @@ function MockHomeAssistant() {
                     const selectedScene = demoScenes[serviceData.entity_id as keyof typeof demoScenes];
                     if (!selectedScene) return;
 
-                    setMockState((previous) => ({
-                        ...previous,
-                        state: selectedScene.state,
-                        attributes: {
-                            ...previous.attributes,
-                            brightness: selectedScene.attributes.brightness,
-                            color_mode: selectedScene.attributes.color_mode,
-                            color_temp: selectedScene.attributes.color_temp,
-                            color_temp_kelvin: selectedScene.attributes.color_temp_kelvin,
-                            hs_color: selectedScene.attributes.hs_color,
-                        },
-                    }));
+                    setMemberStates((previous) =>
+                        Object.fromEntries(
+                            Object.entries(previous).map(([lightEntityId, lightState]) => [
+                                lightEntityId,
+                                {
+                                    ...lightState,
+                                    state: selectedScene.state,
+                                    attributes: {
+                                        ...lightState.attributes,
+                                        brightness: selectedScene.attributes.brightness,
+                                        color_mode: selectedScene.attributes.color_mode,
+                                        color_temp: selectedScene.attributes.color_temp,
+                                        color_temp_kelvin: selectedScene.attributes.color_temp_kelvin,
+                                        hs_color: selectedScene.attributes.hs_color,
+                                    },
+                                },
+                            ])
+                        ) as typeof previous
+                    );
                     return;
                 }
 
                 if (domain !== 'light') return;
 
-                setMockState((previous) => {
-                    const next = { ...previous, attributes: { ...previous.attributes } };
+                setMemberStates((previous) => {
+                    const targetEntityId = typeof serviceData.entity_id === 'string' ? serviceData.entity_id : '';
+                    const targetIds =
+                        targetEntityId === 'light.preview_group'
+                            ? [...groupedLightIds]
+                            : groupedLightIds.filter((entityId) => entityId === targetEntityId);
 
-                    if (service === 'turn_off') {
-                        next.state = 'off';
-                        return next;
+                    const nextState = { ...previous };
+                    for (const nextEntityId of targetIds) {
+                        const current = nextState[nextEntityId];
+                        if (!current) continue;
+
+                        const next = { ...current, attributes: { ...current.attributes } };
+
+                        if (service === 'turn_off') {
+                            next.state = 'off';
+                            next.attributes.brightness = 0;
+                            nextState[nextEntityId] = next;
+                            continue;
+                        }
+
+                        next.state = 'on';
+
+                        if (typeof serviceData.brightness === 'number') {
+                            next.attributes.brightness = serviceData.brightness;
+                        }
+
+                        if (Array.isArray(serviceData.hs_color)) {
+                            next.attributes.hs_color = serviceData.hs_color as [number, number];
+                            next.attributes.color_mode = 'hs';
+                            next.attributes.color_temp = null as unknown as number;
+                            next.attributes.color_temp_kelvin = null as unknown as number;
+                        }
+
+                        if (typeof serviceData.color_temp_kelvin === 'number') {
+                            next.attributes.color_temp_kelvin = serviceData.color_temp_kelvin;
+                            next.attributes.color_temp = Math.round(1000000 / serviceData.color_temp_kelvin);
+                            next.attributes.color_mode = 'color_temp';
+                        }
+
+                        nextState[nextEntityId] = next;
                     }
 
-                    next.state = 'on';
-
-                    if (typeof serviceData.brightness === 'number') {
-                        next.attributes.brightness = serviceData.brightness;
-                    }
-
-                    if (Array.isArray(serviceData.hs_color)) {
-                        next.attributes.hs_color = serviceData.hs_color as [number, number];
-                        next.attributes.color_mode = 'hs';
-                        next.attributes.color_temp = null as unknown as number;
-                        next.attributes.color_temp_kelvin = null as unknown as number;
-                    }
-
-                    if (typeof serviceData.color_temp_kelvin === 'number') {
-                        next.attributes.color_temp_kelvin = serviceData.color_temp_kelvin;
-                        next.attributes.color_temp = Math.round(1000000 / serviceData.color_temp_kelvin);
-                        next.attributes.color_mode = 'color_temp';
-                    }
-
-                    return next;
+                    return nextState;
                 });
             },
         }),
-        [mockState]
+        [memberStates]
     );
 
     return (
@@ -153,7 +237,7 @@ function MockHomeAssistant() {
                     margin: '0 auto',
                 }}
             >
-                <CardApp hass={hass} entityId="light.preview" layout="compact" />
+                <CardApp hass={hass} entityId="light.preview_group" layout="compact" />
             </div>
         </div>
     );

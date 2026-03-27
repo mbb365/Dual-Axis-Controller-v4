@@ -1,12 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import compactCardStyles from './CompactCard.css?inline';
-import { Halo } from './Halo';
+import { Halo, type HaloMarker } from './Halo';
 
 export type CardLayout = 'compact' | 'expanded';
 
 export interface SceneOption {
     entityId: string;
     name: string;
+}
+
+export interface GroupedLightOption {
+    entityId: string;
+    isOn: boolean;
+    name: string;
+    value: string;
+    previewBrightness: number;
+    previewHue: number;
+    previewMode: 'temperature' | 'spectrum';
+    previewSaturation: number;
 }
 
 interface CompactCardProps {
@@ -29,6 +40,13 @@ interface CompactCardProps {
     sceneOptions?: SceneOption[];
     selectedSceneName?: string | null;
     sceneFeedbackMessage?: string | null;
+    groupedLights?: GroupedLightOption[];
+    groupedLightMarkers?: HaloMarker[];
+    controlScope?: 'group' | 'group-relative' | 'individual';
+    controlledLightEntityId?: string | null;
+    onControlScopeChange?: (scope: 'group' | 'group-relative') => void;
+    onGroupedLightSelect?: (entityId: string) => void;
+    onGroupedLightToggle?: (entityId: string) => void;
     onSceneSelect?: (sceneEntityId: string) => void;
     onTapAction?: () => void;
     onHoldAction?: () => void;
@@ -85,6 +103,55 @@ function getRgbText(hue: number, saturation: number, brightness: number) {
     return `R${red} G${green} B${blue}`;
 }
 
+function isWarmTemperatureHue(hue: number) {
+    const normalizedHue = ((hue % 360) + 360) % 360;
+    return Math.abs(normalizedHue - 38) <= Math.abs(normalizedHue - 210);
+}
+
+function buildReflectionColor(
+    isOn: boolean,
+    hue: number,
+    saturation: number,
+    brightness: number,
+    uiMode: 'temperature' | 'spectrum',
+    alpha = 1
+) {
+    if (!isOn) {
+        return `rgba(140, 149, 159, ${0.18 * alpha})`;
+    }
+
+    const normalizedSaturation = Math.max(0, Math.min(1, saturation / 100));
+    const normalizedBrightness = Math.max(0, Math.min(1, brightness / 100));
+
+    if (uiMode === 'temperature') {
+        const isWarm = isWarmTemperatureHue(hue);
+
+        if (normalizedSaturation < 0.12) {
+            if (isWarm) {
+                const lightness = 92 + normalizedBrightness * 5;
+                return `hsla(34, ${36 + normalizedBrightness * 10}%, ${Math.min(98, lightness)}%, ${alpha})`;
+            }
+
+            const lightness = 92 + normalizedBrightness * 5;
+            return `hsla(206, ${30 + normalizedBrightness * 12}%, ${Math.min(98, lightness)}%, ${alpha})`;
+        }
+
+        if (isWarm) {
+            const lightness = 70 + normalizedBrightness * 11 - normalizedSaturation * 3;
+            const colorSaturation = 74 + normalizedSaturation * 24;
+            return `hsla(28, ${Math.min(100, colorSaturation)}%, ${Math.min(84, lightness)}%, ${alpha})`;
+        }
+
+        const lightness = 72 + normalizedBrightness * 10 - normalizedSaturation * 2;
+        const colorSaturation = 64 + normalizedSaturation * 24;
+        return `hsla(204, ${Math.min(96, colorSaturation)}%, ${Math.min(86, lightness)}%, ${alpha})`;
+    }
+
+    const displaySaturation = Math.max(78, Math.min(100, saturation * 1.32));
+    const displayLightness = 60 + normalizedBrightness * 12;
+    return `hsla(${hue}, ${displaySaturation}%, ${Math.min(74, displayLightness)}%, ${alpha})`;
+}
+
 function buildCompactBackground(
     isOn: boolean,
     hue: number,
@@ -93,36 +160,26 @@ function buildCompactBackground(
     uiMode: 'temperature' | 'spectrum'
 ) {
     if (!isOn) {
-        return 'linear-gradient(135deg, rgba(255, 255, 255, 0.7) 0%, rgba(244, 246, 248, 0.8) 42%, rgba(231, 234, 239, 0.62) 72%, rgba(231, 234, 239, 0.2) 100%)';
+        return 'linear-gradient(135deg, #f8fafc 0%, #eef2f7 100%)';
     }
 
     const intensity = Math.max(0, Math.min(1, brightness / 100));
 
     if (uiMode === 'temperature') {
         const normalizedSaturation = Math.max(0, Math.min(1, saturation / 100));
-        const whiteFocus = `hsla(0, 0%, ${98 - intensity * 1.5}%, ${0.52 - normalizedSaturation * 0.14})`;
-        const softGrey = `hsla(220, 14%, ${91 - intensity * 6}%, ${0.26 + (1 - normalizedSaturation) * 0.14})`;
-        const coolOrWarmTint = `hsla(${hue}, ${10 + normalizedSaturation * 34}%, ${84 - intensity * 12}%, ${
-            0.12 + normalizedSaturation * 0.18
-        })`;
-        const shadowGrey = `hsla(222, 16%, ${83 - intensity * 10}%, ${0.14 + (1 - normalizedSaturation) * 0.12})`;
-
-        return `radial-gradient(circle at 18% 28%, ${whiteFocus} 0%, ${whiteFocus} 16%, transparent 44%), linear-gradient(135deg, ${softGrey} 0%, ${coolOrWarmTint} 48%, ${shadowGrey} 76%, transparent 100%)`;
+        const isWarm = isWarmTemperatureHue(hue) && normalizedSaturation >= 0.08;
+        const whiteLift = `rgba(255, 255, 255, ${0.82 - intensity * 0.1})`;
+        const baseTone = isWarm ? 'hsla(34, 100%, 98%, 1)' : 'hsla(205, 100%, 98%, 1)';
+        const midTone = buildReflectionColor(true, hue, saturation, brightness, uiMode, isWarm ? 0.2 : 0.16);
+        const edgeTone = buildReflectionColor(true, hue, saturation, brightness, uiMode, isWarm ? 0.52 : 0.42);
+        return `radial-gradient(circle at 18% 24%, ${whiteLift} 0%, rgba(255, 255, 255, 0.16) 24%, transparent 54%), linear-gradient(135deg, ${baseTone} 0%, ${midTone} 40%, ${edgeTone} 100%)`;
     }
 
-    const tintSaturation = Math.max(18, uiMode === 'spectrum' ? saturation : saturation * 0.72 + 18);
-    const softTint = `hsla(${hue}, ${Math.max(12, tintSaturation * 0.42)}%, ${98 - intensity * 4}%, ${
-        0.12 + intensity * 0.12
-    })`;
-    const midTint = `hsla(${hue}, ${Math.max(18, tintSaturation * 0.7)}%, ${94 - intensity * 10}%, ${
-        0.18 + intensity * 0.14
-    })`;
-    const richTint = `hsla(${hue}, ${Math.max(24, tintSaturation)}%, ${86 - intensity * 18}%, ${
-        0.18 + intensity * 0.22
-    })`;
-    const tintReach = 34 + intensity * 22;
-
-    return `radial-gradient(circle at 16% 26%, ${softTint} 0%, ${softTint} 14%, transparent 42%), linear-gradient(135deg, ${midTint} 0%, ${richTint} ${tintReach}%, transparent 100%)`;
+    const startTone = `hsla(${hue}, ${Math.max(24, saturation * 0.28)}%, ${98 - intensity * 1.4}%, 1)`;
+    const midTone = buildReflectionColor(true, hue, saturation, brightness, uiMode, 0.16);
+    const endTone = buildReflectionColor(true, hue, saturation, brightness, uiMode, 0.5);
+    const whiteLift = `rgba(255, 255, 255, ${0.76 - intensity * 0.08})`;
+    return `radial-gradient(circle at 20% 24%, ${whiteLift} 0%, rgba(255, 255, 255, 0.12) 22%, transparent 50%), linear-gradient(135deg, ${startTone} 0%, ${midTone} 42%, ${endTone} 100%)`;
 }
 
 function buildIconBackground(
@@ -136,19 +193,26 @@ function buildIconBackground(
         return 'rgba(140, 149, 159, 0.18)';
     }
 
-    if (uiMode === 'temperature') {
-        const normalizedSaturation = Math.max(0, Math.min(1, saturation / 100));
-        const normalizedBrightness = Math.max(0, Math.min(1, brightness / 100));
-        const lightness = 80 + (1 - normalizedSaturation) * 15 + normalizedBrightness * 3;
-        const colorSaturation = normalizedSaturation < 0.12 ? 2 : 10 + normalizedSaturation * 52;
+    const normalizedSaturation = Math.max(0, Math.min(1, saturation / 100));
+    const normalizedBrightness = Math.max(0, Math.min(1, brightness / 100));
 
-        return `hsla(${hue}, ${colorSaturation}%, ${Math.min(97, lightness)}%, 0.96)`;
+    if (uiMode === 'temperature') {
+        if (normalizedSaturation < 0.12) {
+            if (isWarmTemperatureHue(hue)) {
+                return `hsla(33, ${48 + normalizedBrightness * 14}%, ${93 + normalizedBrightness * 3}%, 0.98)`;
+            }
+
+            return `hsla(205, ${42 + normalizedBrightness * 14}%, ${93 + normalizedBrightness * 3}%, 0.98)`;
+        }
+
+        if (isWarmTemperatureHue(hue)) {
+            return `hsla(28, ${86 + normalizedSaturation * 12}%, ${72 + normalizedBrightness * 10}%, 0.98)`;
+        }
+
+        return `hsla(204, ${76 + normalizedSaturation * 18}%, ${74 + normalizedBrightness * 9}%, 0.98)`;
     }
 
-    const intensity = Math.max(0, Math.min(1, brightness / 100));
-    const iconSaturation = Math.max(42, uiMode === 'spectrum' ? saturation * 1.08 : saturation * 0.9 + 24);
-
-    return `hsla(${hue}, ${iconSaturation}%, ${52 + intensity * 12}%, 0.94)`;
+    return `hsla(${hue}, ${Math.max(84, saturation * 1.26)}%, ${62 + normalizedBrightness * 10}%, 0.98)`;
 }
 
 function buildIconForeground(
@@ -188,6 +252,13 @@ export function CompactCard({
     sceneOptions = [],
     selectedSceneName,
     sceneFeedbackMessage,
+    groupedLights = [],
+    groupedLightMarkers = [],
+    controlScope = 'group',
+    controlledLightEntityId,
+    onControlScopeChange,
+    onGroupedLightSelect,
+    onGroupedLightToggle,
     onSceneSelect,
     onTapAction,
     onHoldAction,
@@ -303,6 +374,15 @@ export function CompactCard({
         onToggle();
     };
 
+    const handleSceneTriggerPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+        event.stopPropagation();
+    };
+
+    const handleSceneTriggerClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+        event.stopPropagation();
+        setIsSceneMenuOpen((current) => !current);
+    };
+
     if (layout === 'compact') {
         return (
             <div
@@ -363,6 +443,7 @@ export function CompactCard({
                 saturation={saturation}
                 brightness={brightness}
                 isOn={isOn}
+                markers={groupedLightMarkers}
                 onChange={onControlsChange}
                 onInteractionStart={onControlInteractionStart}
                 onInteractionEnd={onControlInteractionEnd}
@@ -404,7 +485,8 @@ export function CompactCard({
                     className={`dual-card__scene-trigger ${isSceneMenuOpen ? 'is-open' : ''}`}
                     disabled={!sceneOptions.length}
                     aria-expanded={isSceneMenuOpen}
-                    onClick={() => setIsSceneMenuOpen((current) => !current)}
+                    onPointerDown={handleSceneTriggerPointerDown}
+                    onClick={handleSceneTriggerClick}
                 >
                     <span>{sceneOptions.length ? (selectedSceneName ?? 'Scenes') : 'No scenes available'}</span>
                     <ha-icon icon={isSceneMenuOpen ? 'mdi:chevron-up' : 'mdi:chevron-down'} className="dual-card__scene-icon" />
@@ -434,6 +516,73 @@ export function CompactCard({
                     </div>
                 ) : null}
             </div>
+
+            {groupedLights.length ? (
+                <div className="dual-card__group-section">
+                    <div className="dual-card__scope-row" role="tablist" aria-label="Control scope">
+                        <button
+                            type="button"
+                            className={`dual-card__scope-pill ${controlScope === 'group' ? 'is-active' : ''}`}
+                            onClick={() => onControlScopeChange?.('group')}
+                        >
+                            Group
+                        </button>
+                        <button
+                            type="button"
+                            className={`dual-card__scope-pill ${controlScope === 'group-relative' ? 'is-active' : ''}`}
+                            onClick={() => onControlScopeChange?.('group-relative')}
+                        >
+                            Group Relative
+                        </button>
+                    </div>
+
+                    <div className="dual-card__group-list">
+                        {groupedLights.map((groupedLight) => (
+                            <div
+                                key={groupedLight.entityId}
+                                className={`dual-card__group-item ${
+                                    controlScope === 'individual' && controlledLightEntityId === groupedLight.entityId ? 'is-active' : ''
+                                }`}
+                            >
+                                <button
+                                    type="button"
+                                    className="dual-card__group-toggle"
+                                    aria-label={`${groupedLight.isOn ? 'Turn off' : 'Turn on'} ${groupedLight.name}`}
+                                    aria-pressed={groupedLight.isOn}
+                                    onClick={() => onGroupedLightToggle?.(groupedLight.entityId)}
+                                    style={{
+                                        background: buildIconBackground(
+                                            groupedLight.isOn,
+                                            groupedLight.previewHue,
+                                            groupedLight.previewSaturation,
+                                            groupedLight.previewBrightness,
+                                            groupedLight.previewMode
+                                        ),
+                                        color: buildIconForeground(
+                                            groupedLight.isOn,
+                                            groupedLight.previewSaturation,
+                                            groupedLight.previewBrightness,
+                                            groupedLight.previewMode
+                                        ),
+                                    }}
+                                >
+                                    <ha-icon icon="mdi:power" className="dual-card__group-toggle-icon" />
+                                </button>
+                                <button
+                                    type="button"
+                                    className="dual-card__group-main"
+                                    onClick={() => onGroupedLightSelect?.(groupedLight.entityId)}
+                                >
+                                    <span className="dual-card__group-meta">
+                                        <span className="dual-card__group-name">{groupedLight.name}</span>
+                                        <span className="dual-card__group-value">{groupedLight.value}</span>
+                                    </span>
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            ) : null}
         </div>
     );
 }
