@@ -1205,8 +1205,10 @@ export function CardApp({
     const expandedSecondaryName = groupedLights.length
         ? groupedLights.find((groupedLight) => groupedLight.entityId === controlledLightEntityId)?.name ?? groupedLights[0]?.name ?? null
         : null;
-    const isMobilePopupViewport =
-        containerWidth > 0 ? containerWidth <= 480 : typeof window !== 'undefined' ? window.innerWidth <= 640 : false;
+    const isMobilePreviewRoute =
+        typeof window !== 'undefined' &&
+        (window.location.pathname.endsWith('/mobile.html') || window.location.pathname === '/mobile.html');
+    const isMobilePopupViewport = typeof window !== 'undefined' ? isMobilePreviewRoute || window.innerWidth <= 640 : false;
     const mobilePopupTopInset = 'calc(env(safe-area-inset-top, 0px) + 56px)';
 
     const closePopup = useCallback(() => {

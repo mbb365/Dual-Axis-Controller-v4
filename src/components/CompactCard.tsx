@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import compactCardStyles from './CompactCard.css?inline';
 import { Halo, type HaloMarker } from './Halo';
 
@@ -298,6 +298,7 @@ export function CompactCard({
     const holdTimer = useRef<number | null>(null);
     const tapTimer = useRef<number | null>(null);
     const holdTriggered = useRef(false);
+    const [isGroupListOpen, setIsGroupListOpen] = useState(false);
 
     useEffect(() => {
         return () => {
@@ -520,7 +521,17 @@ export function CompactCard({
                         </button>
                     </div>
 
-                    <div className="dual-card__group-list">
+                    <button
+                        type="button"
+                        className={`dual-card__group-mobile-trigger ${isGroupListOpen ? 'is-open' : ''}`}
+                        aria-expanded={isGroupListOpen}
+                        onClick={() => setIsGroupListOpen((current) => !current)}
+                    >
+                        <span>Select lights</span>
+                        <ha-icon icon={isGroupListOpen ? 'mdi:chevron-up' : 'mdi:chevron-down'} />
+                    </button>
+
+                    <div className={`dual-card__group-list ${isGroupListOpen ? 'is-mobile-open' : ''}`}>
                         {groupedLights.map((groupedLight) => (
                             <div
                                 key={groupedLight.entityId}
@@ -555,7 +566,10 @@ export function CompactCard({
                                 <button
                                     type="button"
                                     className="dual-card__group-main"
-                                    onClick={() => onGroupedLightSelect?.(groupedLight.entityId)}
+                                    onClick={() => {
+                                        onGroupedLightSelect?.(groupedLight.entityId);
+                                        setIsGroupListOpen(false);
+                                    }}
                                 >
                                     <span className="dual-card__group-meta">
                                         <span className="dual-card__group-name">{groupedLight.name}</span>
