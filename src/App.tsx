@@ -387,6 +387,7 @@ export function CardApp({
             };
         })
         .filter((member): member is GroupedLightOption => member != null);
+    const isDarkMode = Boolean(hass?.themes?.darkMode);
     const groupedLightIdsKey = groupedLightIds.join('|');
 
     const groupedLightMarkers =
@@ -1206,6 +1207,7 @@ export function CardApp({
         : null;
     const isMobilePopupViewport =
         containerWidth > 0 ? containerWidth <= 480 : typeof window !== 'undefined' ? window.innerWidth <= 640 : false;
+    const mobilePopupTopInset = 'calc(env(safe-area-inset-top, 0px) + 56px)';
 
     const closePopup = useCallback(() => {
         setShowPopup(false);
@@ -1241,7 +1243,7 @@ export function CardApp({
 
         popupCloseTimeout.current = window.setTimeout(() => {
             closePopup();
-        }, 240);
+        }, 420);
     }, [closePopup]);
 
     const handlePopupDragStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
@@ -1320,6 +1322,7 @@ export function CardApp({
         <div ref={rootRef}>
             <CompactCard
                 layout={resolvedLayout}
+                isDarkMode={isDarkMode}
                 lightName={resolvedLayout === 'compact' ? compactLightName : lightName}
                 expandedPrimaryName={resolvedLayout === 'compact' ? undefined : expandedPrimaryName}
                 expandedSecondaryName={resolvedLayout === 'compact' ? null : expandedSecondaryName}
@@ -1366,8 +1369,9 @@ export function CardApp({
                         inset: 0,
                         background: `rgba(15, 23, 42, ${Math.max(0.08, 0.18 - popupDragOffset / 900)})`,
                         display: 'grid',
-                        placeItems: 'center',
-                        padding: 'max(12px, min(24px, 4vw))',
+                        alignItems: isMobilePopupViewport ? 'end' : 'center',
+                        justifyItems: 'center',
+                        padding: isMobilePopupViewport ? `${mobilePopupTopInset} 0 0` : 'max(12px, min(24px, 4vw))',
                         boxSizing: 'border-box',
                         zIndex: 1000,
                     }}
@@ -1375,14 +1379,18 @@ export function CardApp({
                     <div
                         onClick={(event) => event.stopPropagation()}
                         style={{
-                            width: 'min(100%, 460px)',
+                            width: isMobilePopupViewport ? '100%' : 'min(100%, 460px)',
                             maxWidth: '100%',
-                            maxHeight: 'calc(100dvh - max(24px, min(48px, 8vw)))',
+                            height: isMobilePopupViewport ? `calc(100dvh - ${mobilePopupTopInset})` : undefined,
+                            maxHeight: isMobilePopupViewport
+                                ? `calc(100dvh - ${mobilePopupTopInset})`
+                                : 'calc(100dvh - max(24px, min(48px, 8vw)))',
                             background: 'var(--ha-card-background, var(--card-background-color, #ffffff))',
-                            borderRadius: 'var(--ha-card-border-radius, 12px)',
+                            borderRadius: isMobilePopupViewport ? '18px 18px 0 0' : 'var(--ha-card-border-radius, 12px)',
                             boxShadow: 'var(--ha-card-box-shadow, 0 8px 24px rgba(15, 23, 42, 0.16))',
                             border: '1px solid var(--divider-color, rgba(0, 0, 0, 0.08))',
-                            padding: '16px',
+                            borderBottom: isMobilePopupViewport ? '0' : '1px solid var(--divider-color, rgba(0, 0, 0, 0.08))',
+                            padding: isMobilePopupViewport ? '14px 14px 0' : '16px',
                             boxSizing: 'border-box',
                             display: 'flex',
                             flexDirection: 'column',
@@ -1392,7 +1400,7 @@ export function CardApp({
                             transform: `translateY(${popupDragOffset}px)`,
                             transition: isPopupDragging
                                 ? 'none'
-                                : `transform ${isPopupClosing ? '0.24s cubic-bezier(0.22, 1, 0.36, 1)' : '0.22s ease'}, box-shadow 0.22s ease`,
+                                : `transform ${isPopupClosing ? '0.42s cubic-bezier(0.22, 1, 0.36, 1)' : '0.22s ease'}, box-shadow 0.22s ease`,
                         }}
                     >
                         <div
@@ -1423,6 +1431,7 @@ export function CardApp({
                         </div>
                         <CompactCard
                             layout="expanded"
+                            isDarkMode={isDarkMode}
                             lightName={lightName}
                             expandedPrimaryName={expandedPrimaryName}
                             expandedSecondaryName={expandedSecondaryName}

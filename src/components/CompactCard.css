@@ -26,16 +26,7 @@
 }
 
 .dual-card--compact::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background-image:
-        linear-gradient(rgba(77, 91, 124, 0.08) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(77, 91, 124, 0.08) 1px, transparent 1px);
-    background-size: 18px 18px;
-    background-position: center center;
-    opacity: 0.24;
-    pointer-events: none;
+    content: none;
 }
 
 .dual-card--compact::after {
@@ -603,6 +594,44 @@
         flex: 1;
         min-height: 0;
         max-height: none;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        align-content: start;
+        padding-right: 2px;
+    }
+
+    .dual-card__group-item {
+        min-height: 40px;
+        gap: 8px;
+        padding: 4px;
+        border-radius: 22px;
+    }
+
+    .dual-card__group-toggle {
+        width: 30px;
+        height: 30px;
+    }
+
+    .dual-card__group-toggle-icon {
+        --mdc-icon-size: 16px;
+    }
+
+    .dual-card__group-main {
+        min-height: 30px;
+    }
+
+    .dual-card__group-meta {
+        gap: 1px;
+    }
+
+    .dual-card__group-name {
+        font-size: 0.82rem;
+        line-height: 1.1;
+    }
+
+    .dual-card__group-value {
+        font-size: 0.72rem;
+        line-height: 1.1;
     }
 }
 
@@ -633,8 +662,19 @@
     }
 }
 
-@media (prefers-color-scheme: dark) {
-    .dual-card--compact {
+    .dual-card--theme-dark .dual-card__expanded-title {
+        color: rgba(241, 245, 249, 0.96);
+    }
+
+    .dual-card--theme-dark .dual-card__expanded-title--secondary {
+        color: rgba(203, 213, 225, 0.72);
+    }
+
+    .dual-card--theme-dark .dual-card__meta-value {
+        color: rgba(241, 245, 249, 0.96);
+    }
+
+    .dual-card--theme-dark.dual-card--compact {
         background-color: rgba(29, 34, 41, 0.96);
         border-color: rgba(255, 255, 255, 0.12);
         box-shadow: none;
@@ -642,16 +682,61 @@
         -webkit-backdrop-filter: none;
     }
 
-    .dual-card--compact::before {
-        opacity: 0.16;
-    }
-
-    .dual-card__icon-shell {
+    .dual-card--theme-dark .dual-card__icon-shell {
         box-shadow: none;
         border-color: rgba(255, 255, 255, 0.08);
     }
 
-    .dual-card__scene-menu {
+    .dual-card--theme-dark .dual-card__mode-pill,
+    .dual-card--theme-dark .dual-card__power-pill,
+    .dual-card--theme-dark .dual-card__scene-trigger,
+    .dual-card--theme-dark .dual-card__scope-pill,
+    .dual-card--theme-dark .dual-card__group-item,
+    .dual-card--theme-dark .dual-card__scene-option {
+        background: rgba(30, 41, 59, 0.92);
+        color: rgba(226, 232, 240, 0.92);
+        border-color: rgba(148, 163, 184, 0.28);
+    }
+
+    .dual-card--theme-dark .dual-card__mode-pill.is-active,
+    .dual-card--theme-dark .dual-card__power-pill.is-active,
+    .dual-card--theme-dark .dual-card__scope-pill.is-active,
+    .dual-card--theme-dark .dual-card__group-item.is-active {
+        background: rgba(37, 50, 71, 0.96);
+        border-color: rgba(148, 163, 184, 0.5);
+        color: rgba(241, 245, 249, 0.98);
+    }
+
+    .dual-card--theme-dark .dual-card__mode-pill:not(:disabled):hover,
+    .dual-card--theme-dark .dual-card__power-pill:hover,
+    .dual-card--theme-dark .dual-card__scene-trigger:not(:disabled):hover,
+    .dual-card--theme-dark .dual-card__group-item:hover {
+        border-color: rgba(148, 163, 184, 0.42);
+        background: rgba(36, 48, 68, 0.94);
+    }
+
+    .dual-card--theme-dark .dual-card__scene-trigger.is-open {
+        background: rgba(37, 50, 71, 0.96);
+        border-color: rgba(148, 163, 184, 0.5);
+    }
+
+    .dual-card--theme-dark .dual-card__scene-placeholder {
+        color: rgba(203, 213, 225, 0.52);
+    }
+
+    .dual-card--theme-dark .dual-card__group-section {
+        border-top-color: rgba(148, 163, 184, 0.2);
+    }
+
+    .dual-card--theme-dark .dual-card__group-name {
+        color: rgba(241, 245, 249, 0.94);
+    }
+
+    .dual-card--theme-dark .dual-card__group-value {
+        color: rgba(203, 213, 225, 0.7);
+    }
+
+    .dual-card--theme-dark .dual-card__scene-menu {
         border-color: rgba(255, 255, 255, 0.08);
         background: linear-gradient(145deg, rgba(22, 27, 34, 0.9) 0%, rgba(28, 34, 42, 0.84) 100%);
         box-shadow:
@@ -660,5 +745,3 @@
         backdrop-filter: blur(3px) saturate(110%);
         -webkit-backdrop-filter: blur(3px) saturate(110%);
     }
-
-}

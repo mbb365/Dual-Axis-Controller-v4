@@ -22,6 +22,7 @@ export interface GroupedLightOption {
 
 interface CompactCardProps {
     layout: CardLayout;
+    isDarkMode?: boolean;
     lightName: string;
     expandedPrimaryName?: string;
     expandedSecondaryName?: string | null;
@@ -170,23 +171,17 @@ function buildCompactBackground(
         return 'linear-gradient(135deg, #f8fafc 0%, #eef2f7 100%)';
     }
 
-    const intensity = Math.max(0, Math.min(1, brightness / 100));
-
     if (uiMode === 'temperature') {
         const normalizedSaturation = Math.max(0, Math.min(1, saturation / 100));
         const isWarm = isWarmTemperatureHue(hue) && normalizedSaturation >= 0.08;
-        const whiteLift = `rgba(255, 255, 255, ${0.82 - intensity * 0.1})`;
-        const baseTone = isWarm ? 'hsla(34, 100%, 98%, 1)' : 'hsla(205, 100%, 98%, 1)';
-        const midTone = buildReflectionColor(true, hue, saturation, brightness, uiMode, isWarm ? 0.2 : 0.16);
-        const edgeTone = buildReflectionColor(true, hue, saturation, brightness, uiMode, isWarm ? 0.52 : 0.42);
-        return `radial-gradient(circle at 18% 24%, ${whiteLift} 0%, rgba(255, 255, 255, 0.16) 24%, transparent 54%), linear-gradient(135deg, ${baseTone} 0%, ${midTone} 40%, ${edgeTone} 100%)`;
+        const startTone = isWarm ? 'hsla(34, 100%, 97%, 1)' : 'hsla(205, 95%, 97%, 1)';
+        const endTone = buildReflectionColor(true, hue, saturation, brightness, uiMode, isWarm ? 0.48 : 0.42);
+        return `linear-gradient(135deg, ${startTone} 0%, ${endTone} 100%)`;
     }
 
-    const startTone = `hsla(${hue}, ${Math.max(24, saturation * 0.28)}%, ${98 - intensity * 1.4}%, 1)`;
-    const midTone = buildReflectionColor(true, hue, saturation, brightness, uiMode, 0.16);
-    const endTone = buildReflectionColor(true, hue, saturation, brightness, uiMode, 0.5);
-    const whiteLift = `rgba(255, 255, 255, ${0.76 - intensity * 0.08})`;
-    return `radial-gradient(circle at 20% 24%, ${whiteLift} 0%, rgba(255, 255, 255, 0.12) 22%, transparent 50%), linear-gradient(135deg, ${startTone} 0%, ${midTone} 42%, ${endTone} 100%)`;
+    const startTone = `hsla(${hue}, ${Math.max(18, saturation * 0.22)}%, 97%, 1)`;
+    const endTone = buildReflectionColor(true, hue, saturation, brightness, uiMode, 0.44);
+    return `linear-gradient(135deg, ${startTone} 0%, ${endTone} 100%)`;
 }
 
 function buildGroupedCompactBackground(groupedLights: GroupedLightOption[]) {
@@ -199,52 +194,19 @@ function buildGroupedCompactBackground(groupedLights: GroupedLightOption[]) {
         return null;
     }
 
-    const anchorSets =
-        activeLights.length === 2
-            ? [
-                  { x: 18, y: 42 },
-                  { x: 82, y: 54 },
-              ]
-            : activeLights.length === 3
-              ? [
-                    { x: 18, y: 24 },
-                    { x: 82, y: 26 },
-                    { x: 46, y: 76 },
-                ]
-              : [
-                    { x: 16, y: 24 },
-                    { x: 82, y: 22 },
-                    { x: 34, y: 78 },
-                    { x: 78, y: 72 },
-                ];
-
-    const colorLayers = activeLights.map((light, index) => {
-        const brightnessRatio = Math.max(0, Math.min(1, light.previewBrightness / 100));
-        const coreAlpha = 0.16 + brightnessRatio * 0.18;
-        const midAlpha = 0.08 + brightnessRatio * 0.1;
-        const radius = 46 + brightnessRatio * 16;
-        const anchor = anchorSets[index] ?? anchorSets[anchorSets.length - 1];
-
-        return `radial-gradient(circle at ${anchor.x}% ${anchor.y}%, ${buildReflectionColor(
+    const gradientStops = activeLights.map((light, index) => {
+        const position = activeLights.length === 1 ? 100 : Math.round((index / (activeLights.length - 1)) * 100);
+        return `${buildReflectionColor(
             true,
             light.previewHue,
             light.previewSaturation,
             light.previewBrightness,
             light.previewMode,
-            coreAlpha
-        )} 0%, ${buildReflectionColor(
-            true,
-            light.previewHue,
-            light.previewSaturation,
-            light.previewBrightness,
-            light.previewMode,
-            midAlpha
-        )} ${Math.round(radius * 0.46)}%, transparent ${Math.round(radius)}%)`;
+            0.42
+        )} ${position}%`;
     });
 
-    return `radial-gradient(circle at 20% 22%, rgba(255, 255, 255, 0.82) 0%, rgba(255, 255, 255, 0.14) 24%, transparent 52%), ${colorLayers.join(
-        ', '
-    )}, linear-gradient(135deg, rgba(255, 255, 255, 0.92) 0%, rgba(249, 251, 254, 0.9) 48%, rgba(242, 246, 251, 0.96) 100%)`;
+    return `linear-gradient(135deg, rgba(248, 250, 252, 0.96) 0%, ${gradientStops.join(', ')})`;
 }
 
 function buildIconBackground(
@@ -299,6 +261,7 @@ function buildIconForeground(
 
 export function CompactCard({
     layout,
+    isDarkMode = false,
     lightName,
     expandedPrimaryName,
     expandedSecondaryName,
@@ -424,7 +387,7 @@ export function CompactCard({
     if (layout === 'compact') {
         return (
             <div
-                className="dual-card dual-card--compact"
+                className={`dual-card dual-card--compact${isDarkMode ? ' dual-card--theme-dark' : ''}`}
                 role={onTapAction ? 'button' : undefined}
                 tabIndex={onTapAction ? 0 : -1}
                 onPointerDown={handlePointerDown}
@@ -463,7 +426,7 @@ export function CompactCard({
     }
 
     return (
-        <div className="dual-card dual-card--expanded">
+        <div className={`dual-card dual-card--expanded${isDarkMode ? ' dual-card--theme-dark' : ''}`}>
             <style>{compactCardStyles}</style>
             <div className="dual-card__expanded-title-row">
                 <div className="dual-card__expanded-title">{displayExpandedPrimaryName}</div>
