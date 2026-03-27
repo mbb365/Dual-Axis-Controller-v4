@@ -42,6 +42,7 @@ interface CompactCardProps {
     onDiscoModeTrigger?: () => void;
     onDiscoModeExit?: () => void;
     onPadMarkerSelect?: (entityId: string) => void;
+    onPadDoubleSelect?: (h: number, s: number, b: number) => void;
     onToggle: () => void;
     sceneOptions?: SceneOption[];
     selectedSceneName?: string | null;
@@ -318,6 +319,7 @@ export function CompactCard({
     onDiscoModeTrigger,
     onDiscoModeExit,
     onPadMarkerSelect,
+    onPadDoubleSelect,
     onToggle,
     groupedLights = [],
     groupedLightMarkers = [],
@@ -494,6 +496,7 @@ export function CompactCard({
                 onDiscoModeTrigger={onDiscoModeTrigger}
                 onDiscoModeExit={onDiscoModeExit}
                 onMarkerSelect={onPadMarkerSelect}
+                onDoubleSelect={onPadDoubleSelect}
                 onToggle={onToggle}
                 mode={uiMode}
             />

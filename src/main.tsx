@@ -2,6 +2,10 @@ import { createRoot } from 'react-dom/client';
 import { useMemo, useState } from 'react';
 import { CardApp } from './App';
 
+const isMobileDemo =
+    typeof window !== 'undefined' &&
+    (window.location.pathname.endsWith('/mobile.html') || window.location.pathname === '/mobile.html');
+
 const demoScenes = {
     'scene.preview_focus': {
         friendly_name: 'Focus Beam',
@@ -225,16 +229,28 @@ function MockHomeAssistant() {
         <div
             style={{
                 minHeight: '100vh',
-                background: '#f3f4f6',
-                padding: '32px',
+                background: isMobileDemo ? '#dfe4ec' : '#f3f4f6',
+                padding: isMobileDemo ? '20px 12px' : '32px',
                 boxSizing: 'border-box',
                 fontFamily: 'system-ui, sans-serif',
+                display: 'grid',
+                placeItems: 'center',
             }}
         >
             <div
                 style={{
-                    maxWidth: '520px',
+                    width: isMobileDemo ? 'min(100%, 390px)' : '100%',
+                    maxWidth: isMobileDemo ? '390px' : '520px',
                     margin: '0 auto',
+                    minHeight: isMobileDemo ? '844px' : undefined,
+                    borderRadius: isMobileDemo ? '32px' : undefined,
+                    padding: isMobileDemo ? '18px 14px' : undefined,
+                    background: isMobileDemo ? '#f7f8fb' : undefined,
+                    boxShadow: isMobileDemo
+                        ? '0 24px 60px rgba(15, 23, 42, 0.18), inset 0 0 0 1px rgba(255, 255, 255, 0.55)'
+                        : undefined,
+                    boxSizing: 'border-box',
+                    overflow: 'hidden',
                 }}
             >
                 <CardApp hass={hass} entityId="light.preview_group" layout="compact" />

@@ -14,6 +14,7 @@ interface HaloProps {
     onDiscoModeTrigger?: () => void;
     onDiscoModeExit?: () => void;
     onMarkerSelect?: (entityId: string) => void;
+    onDoubleSelect?: (hue: number, saturation: number, brightness: number) => void;
     onToggle: () => void;
     mode: 'temperature' | 'spectrum';
 }
@@ -520,6 +521,7 @@ export function Halo({
     onDiscoModeTrigger,
     onDiscoModeExit,
     onMarkerSelect,
+    onDoubleSelect,
     onToggle,
     mode,
 }: HaloProps) {
@@ -553,12 +555,12 @@ export function Halo({
         resetSpeedRuleTracking();
     }, [isDiscoMode]);
 
-    const selectionFromPosition = (event: React.PointerEvent): HaloSelection | null => {
+    const selectionFromClientPosition = (clientX: number, clientY: number): HaloSelection | null => {
         if (!trackpadRef.current) return null;
 
         const rect = trackpadRef.current.getBoundingClientRect();
-        let xPercent = (event.clientX - rect.left) / rect.width;
-        let yPercent = (event.clientY - rect.top) / rect.height;
+        let xPercent = (clientX - rect.left) / rect.width;
+        let yPercent = (clientY - rect.top) / rect.height;
 
         xPercent = Math.max(0, Math.min(1, xPercent));
         yPercent = Math.max(0, Math.min(1, yPercent));
@@ -585,6 +587,8 @@ export function Halo({
             yPercent: yPercent * 100,
         };
     };
+
+    const selectionFromPosition = (event: React.PointerEvent) => selectionFromClientPosition(event.clientX, event.clientY);
 
     const triggerPulse = ({ xPercent, yPercent, hue: nextHue, saturation: nextSaturation, brightness: nextBrightness }: HaloSelection) => {
         pulseIdRef.current += 1;
@@ -744,6 +748,16 @@ export function Halo({
         resetSpeedRuleTracking();
     };
 
+    const handleDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+        if (!isOn || isDiscoMode || !onDoubleSelect) return;
+
+        const selection = selectionFromClientPosition(event.clientX, event.clientY);
+        if (!selection) return;
+
+        triggerPulse(selection);
+        onDoubleSelect(selection.hue, selection.saturation, selection.brightness);
+    };
+
     const padBackground =
         !isOn
             ? 'radial-gradient(circle at 50% 50%, rgba(196, 181, 253, 0.34) 0%, rgba(196, 181, 253, 0.14) 26%, rgba(217, 222, 230, 0.08) 48%, rgba(216, 220, 228, 0) 72%), linear-gradient(145deg, rgba(239, 241, 245, 0.98) 0%, rgba(223, 227, 234, 0.96) 54%, rgba(210, 214, 222, 0.98) 100%)'
@@ -782,6 +796,7 @@ export function Halo({
                     onPointerMove={handlePointerMove}
                     onPointerUp={handlePointerUp}
                     onPointerCancel={handlePointerUp}
+                    onDoubleClick={handleDoubleClick}
                     style={{
                         background: padBackground,
                         ['--halo-active-color' as string]: indicatorColor,

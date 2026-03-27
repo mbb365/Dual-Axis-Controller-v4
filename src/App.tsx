@@ -353,6 +353,15 @@ export function CardApp({
     const [sceneFeedbackMessage, setSceneFeedbackMessage] = useState<string | null>(null);
     const [showPopup, setShowPopup] = useState(false);
     const [isDiscoMode, setIsDiscoMode] = useState(false);
+    const [popupDragOffset, setPopupDragOffset] = useState(0);
+    const [isPopupDragging, setIsPopupDragging] = useState(false);
+    const [isPopupClosing, setIsPopupClosing] = useState(false);
+    const popupDragStartY = useRef<number | null>(null);
+    const popupDragPointerId = useRef<number | null>(null);
+    const popupDragLastY = useRef<number | null>(null);
+    const popupDragLastAt = useRef<number | null>(null);
+    const popupDragMoved = useRef(false);
+    const popupCloseTimeout = useRef<number | null>(null);
 
     const groupedLights: GroupedLightOption[] = groupedLightIds
         .map((memberId) => {
@@ -489,8 +498,28 @@ export function CardApp({
             if (sceneFeedbackTimeout.current) {
                 window.clearTimeout(sceneFeedbackTimeout.current);
             }
+            if (popupCloseTimeout.current) {
+                window.clearTimeout(popupCloseTimeout.current);
+            }
         };
     }, []);
+
+    useEffect(() => {
+        if (!showPopup) {
+            setPopupDragOffset(0);
+            setIsPopupDragging(false);
+            setIsPopupClosing(false);
+            popupDragStartY.current = null;
+            popupDragPointerId.current = null;
+            popupDragLastY.current = null;
+            popupDragLastAt.current = null;
+            popupDragMoved.current = false;
+            if (popupCloseTimeout.current) {
+                window.clearTimeout(popupCloseTimeout.current);
+                popupCloseTimeout.current = null;
+            }
+        }
+    }, [showPopup]);
 
     useEffect(() => {
         pendingControlCommand.current = null;
@@ -934,6 +963,56 @@ export function CardApp({
         ]
     );
 
+    const handleGroupRelativeDoubleSelect = useCallback(
+        (nextHue: number, nextSaturation: number, nextBrightness: number) => {
+            if (controlScope !== 'group-relative' || !groupedLightIds.length) return;
+
+            stopDiscoMode();
+            beginControlInteraction();
+            setSelectedSceneName(null);
+            setControlScope('group');
+            setIsOn(nextBrightness > 0);
+            setHue(nextHue);
+            setSaturation(nextSaturation);
+            setBrightness(nextBrightness);
+
+            if (uiMode === 'temperature') {
+                setKelvin(kelvinFromXPosition(xFractionFromHueSat(nextHue, nextSaturation, 'temperature'), groupLight ?? light));
+            } else {
+                setKelvin(null);
+            }
+
+            const nextCommand = buildQueuedControlCommand(
+                entityId,
+                groupLight ?? light,
+                {
+                    brightness: nextBrightness,
+                    hue: nextHue,
+                    saturation: nextSaturation,
+                },
+                uiMode
+            );
+
+            queueControlCommand([nextCommand]);
+            flushQueuedControlCommand(true);
+            groupRelativeInteractionSnapshot.current = null;
+            endControlInteraction();
+        },
+        [
+            beginControlInteraction,
+            controlScope,
+            entityId,
+            endControlInteraction,
+            flushQueuedControlCommand,
+            groupLight,
+            groupedLightIds.length,
+            light,
+            queueControlCommand,
+            stopDiscoMode,
+            uiMode,
+        ]
+    );
+
     const handleControlInteractionEnd = useCallback(() => {
         flushQueuedControlCommand(true);
         groupRelativeInteractionSnapshot.current = null;
@@ -1125,6 +1204,117 @@ export function CardApp({
     const expandedSecondaryName = groupedLights.length
         ? groupedLights.find((groupedLight) => groupedLight.entityId === controlledLightEntityId)?.name ?? groupedLights[0]?.name ?? null
         : null;
+    const isMobilePopupViewport =
+        containerWidth > 0 ? containerWidth <= 480 : typeof window !== 'undefined' ? window.innerWidth <= 640 : false;
+
+    const closePopup = useCallback(() => {
+        setShowPopup(false);
+        setPopupDragOffset(0);
+        setIsPopupDragging(false);
+        setIsPopupClosing(false);
+        popupDragStartY.current = null;
+        popupDragPointerId.current = null;
+        popupDragLastY.current = null;
+        popupDragLastAt.current = null;
+        popupDragMoved.current = false;
+        if (popupCloseTimeout.current) {
+            window.clearTimeout(popupCloseTimeout.current);
+            popupCloseTimeout.current = null;
+        }
+    }, []);
+
+    const animatePopupClose = useCallback((startingOffset: number) => {
+        const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+        const targetOffset = Math.max(viewportHeight, startingOffset + 240);
+
+        setIsPopupDragging(false);
+        setIsPopupClosing(true);
+        setPopupDragOffset(startingOffset);
+
+        if (popupCloseTimeout.current) {
+            window.clearTimeout(popupCloseTimeout.current);
+        }
+
+        window.requestAnimationFrame(() => {
+            setPopupDragOffset(targetOffset);
+        });
+
+        popupCloseTimeout.current = window.setTimeout(() => {
+            closePopup();
+        }, 240);
+    }, [closePopup]);
+
+    const handlePopupDragStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+        if (!isMobilePopupViewport) return;
+
+        if (popupCloseTimeout.current) {
+            window.clearTimeout(popupCloseTimeout.current);
+            popupCloseTimeout.current = null;
+        }
+
+        popupDragStartY.current = event.clientY;
+        popupDragPointerId.current = event.pointerId;
+        popupDragLastY.current = event.clientY;
+        popupDragLastAt.current = performance.now();
+        popupDragMoved.current = false;
+        setIsPopupDragging(true);
+        setIsPopupClosing(false);
+        setPopupDragOffset(0);
+        event.currentTarget.setPointerCapture(event.pointerId);
+    }, [isMobilePopupViewport]);
+
+    const handlePopupDragMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+        if (popupDragPointerId.current !== event.pointerId || popupDragStartY.current == null) return;
+
+        const nextOffset = Math.max(0, event.clientY - popupDragStartY.current);
+        if (nextOffset > 6) {
+            popupDragMoved.current = true;
+        }
+        popupDragLastY.current = event.clientY;
+        popupDragLastAt.current = performance.now();
+        setPopupDragOffset(nextOffset);
+    }, []);
+
+    const handlePopupDragEnd = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+        if (popupDragPointerId.current !== event.pointerId || popupDragStartY.current == null) return;
+
+        const finalOffset = Math.max(0, event.clientY - popupDragStartY.current);
+        const now = performance.now();
+        const lastY = popupDragLastY.current ?? event.clientY;
+        const lastAt = popupDragLastAt.current ?? now;
+        const deltaY = event.clientY - lastY;
+        const deltaTime = Math.max(1, now - lastAt);
+        const velocityPxPerMs = deltaY / deltaTime;
+        const shouldClose = finalOffset > 88 || velocityPxPerMs > 0.55;
+        popupDragStartY.current = null;
+        popupDragPointerId.current = null;
+        popupDragLastY.current = null;
+        popupDragLastAt.current = null;
+
+        if (shouldClose) {
+            animatePopupClose(finalOffset);
+        } else {
+            setIsPopupDragging(false);
+            setIsPopupClosing(false);
+            setPopupDragOffset(0);
+        }
+
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+        }
+    }, [animatePopupClose]);
+
+    const handlePopupHandleClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+        event.stopPropagation();
+        if (!isMobilePopupViewport) return;
+
+        if (popupDragMoved.current) {
+            popupDragMoved.current = false;
+            return;
+        }
+
+        animatePopupClose(Math.max(18, popupDragOffset));
+    }, [animatePopupClose, isMobilePopupViewport, popupDragOffset]);
 
     return (
         <div ref={rootRef}>
@@ -1150,6 +1340,7 @@ export function CardApp({
                 onDiscoModeTrigger={startDiscoMode}
                 onDiscoModeExit={stopDiscoMode}
                 onPadMarkerSelect={groupedLights.length ? handleGroupedLightSelect : undefined}
+                onPadDoubleSelect={handleGroupRelativeDoubleSelect}
                 onToggle={resolvedLayout === 'compact' ? handleCompactToggle : handleToggle}
                 sceneOptions={sceneOptions}
                 selectedSceneName={selectedSceneName}
@@ -1169,14 +1360,14 @@ export function CardApp({
 
             {resolvedLayout === 'compact' && showPopup ? (
                 <div
-                    onClick={() => setShowPopup(false)}
+                    onClick={closePopup}
                     style={{
                         position: 'fixed',
                         inset: 0,
-                        background: 'rgba(15, 23, 42, 0.18)',
+                        background: `rgba(15, 23, 42, ${Math.max(0.08, 0.18 - popupDragOffset / 900)})`,
                         display: 'grid',
                         placeItems: 'center',
-                        padding: '24px',
+                        padding: 'max(12px, min(24px, 4vw))',
                         boxSizing: 'border-box',
                         zIndex: 1000,
                     }}
@@ -1185,14 +1376,51 @@ export function CardApp({
                         onClick={(event) => event.stopPropagation()}
                         style={{
                             width: 'min(100%, 460px)',
+                            maxWidth: '100%',
+                            maxHeight: 'calc(100dvh - max(24px, min(48px, 8vw)))',
                             background: 'var(--ha-card-background, var(--card-background-color, #ffffff))',
                             borderRadius: 'var(--ha-card-border-radius, 12px)',
                             boxShadow: 'var(--ha-card-box-shadow, 0 8px 24px rgba(15, 23, 42, 0.16))',
                             border: '1px solid var(--divider-color, rgba(0, 0, 0, 0.08))',
                             padding: '16px',
                             boxSizing: 'border-box',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            overflowY: isMobilePopupViewport ? 'hidden' : 'auto',
+                            overscrollBehavior: 'contain',
+                            WebkitOverflowScrolling: 'touch',
+                            transform: `translateY(${popupDragOffset}px)`,
+                            transition: isPopupDragging
+                                ? 'none'
+                                : `transform ${isPopupClosing ? '0.24s cubic-bezier(0.22, 1, 0.36, 1)' : '0.22s ease'}, box-shadow 0.22s ease`,
                         }}
                     >
+                        <div
+                            onPointerDown={handlePopupDragStart}
+                            onPointerMove={handlePopupDragMove}
+                            onPointerUp={handlePopupDragEnd}
+                            onPointerCancel={handlePopupDragEnd}
+                            onClick={handlePopupHandleClick}
+                            style={{
+                                display: isMobilePopupViewport ? 'flex' : 'none',
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                minHeight: '22px',
+                                margin: '-4px 0 10px',
+                                touchAction: 'none',
+                                cursor: 'grab',
+                            }}
+                            aria-label="Drag down to close"
+                        >
+                            <div
+                                style={{
+                                    width: '42px',
+                                    height: '5px',
+                                    borderRadius: '999px',
+                                    background: 'rgba(143, 154, 168, 0.55)',
+                                }}
+                            />
+                        </div>
                         <CompactCard
                             layout="expanded"
                             lightName={lightName}
@@ -1215,6 +1443,7 @@ export function CardApp({
                             onDiscoModeTrigger={startDiscoMode}
                             onDiscoModeExit={stopDiscoMode}
                             onPadMarkerSelect={groupedLights.length ? handleGroupedLightSelect : undefined}
+                            onPadDoubleSelect={handleGroupRelativeDoubleSelect}
                             onToggle={handleToggle}
                             sceneOptions={sceneOptions}
                             selectedSceneName={selectedSceneName}
