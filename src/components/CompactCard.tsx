@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import compactCardStyles from './CompactCard.css?inline';
 import { Halo, type HaloMarker } from './Halo';
 
@@ -23,6 +23,8 @@ export interface GroupedLightOption {
 interface CompactCardProps {
     layout: CardLayout;
     lightName: string;
+    expandedPrimaryName?: string;
+    expandedSecondaryName?: string | null;
     icon: string;
     isOn: boolean;
     hue: number;
@@ -297,6 +299,8 @@ function buildIconForeground(
 export function CompactCard({
     layout,
     lightName,
+    expandedPrimaryName,
+    expandedSecondaryName,
     icon: _icon,
     isOn,
     hue,
@@ -315,9 +319,6 @@ export function CompactCard({
     onDiscoModeExit,
     onPadMarkerSelect,
     onToggle,
-    sceneOptions = [],
-    selectedSceneName,
-    sceneFeedbackMessage,
     groupedLights = [],
     groupedLightMarkers = [],
     controlScope = 'group',
@@ -325,7 +326,6 @@ export function CompactCard({
     onControlScopeChange,
     onGroupedLightSelect,
     onGroupedLightToggle,
-    onSceneSelect,
     onTapAction,
     onHoldAction,
     onDoubleTapAction,
@@ -333,8 +333,6 @@ export function CompactCard({
     const holdTimer = useRef<number | null>(null);
     const tapTimer = useRef<number | null>(null);
     const holdTriggered = useRef(false);
-    const sceneDropdownRef = useRef<HTMLDivElement>(null);
-    const [isSceneMenuOpen, setIsSceneMenuOpen] = useState(false);
 
     useEffect(() => {
         return () => {
@@ -342,30 +340,6 @@ export function CompactCard({
             if (tapTimer.current) window.clearTimeout(tapTimer.current);
         };
     }, []);
-
-    useEffect(() => {
-        if (!isSceneMenuOpen) return;
-
-        const handlePointerDown = (event: PointerEvent) => {
-            if (!sceneDropdownRef.current?.contains(event.target as Node)) {
-                setIsSceneMenuOpen(false);
-            }
-        };
-
-        const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                setIsSceneMenuOpen(false);
-            }
-        };
-
-        document.addEventListener('pointerdown', handlePointerDown);
-        document.addEventListener('keydown', handleKeyDown);
-
-        return () => {
-            document.removeEventListener('pointerdown', handlePointerDown);
-            document.removeEventListener('keydown', handleKeyDown);
-        };
-    }, [isSceneMenuOpen]);
 
     const leadingValue =
         uiMode === 'temperature' && kelvin ? `${kelvin.toLocaleString()}K` : getRgbText(hue, saturation, brightness);
@@ -377,6 +351,9 @@ export function CompactCard({
               : 'Off';
     const compactBackground =
         buildGroupedCompactBackground(groupedLights) ?? buildCompactBackground(isOn, hue, saturation, brightness, uiMode);
+    const displayExpandedPrimaryName = expandedPrimaryName ?? lightName;
+    const displayExpandedSecondaryName =
+        expandedSecondaryName && expandedSecondaryName !== displayExpandedPrimaryName ? expandedSecondaryName : null;
 
     const clearHold = () => {
         if (holdTimer.current) {
@@ -442,15 +419,6 @@ export function CompactCard({
         onToggle();
     };
 
-    const handleSceneTriggerPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
-        event.stopPropagation();
-    };
-
-    const handleSceneTriggerClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-        event.stopPropagation();
-        setIsSceneMenuOpen((current) => !current);
-    };
-
     if (layout === 'compact') {
         return (
             <div
@@ -495,7 +463,14 @@ export function CompactCard({
     return (
         <div className="dual-card dual-card--expanded">
             <style>{compactCardStyles}</style>
-            <div className="dual-card__expanded-title">{lightName}</div>
+            <div className="dual-card__expanded-title-row">
+                <div className="dual-card__expanded-title">{displayExpandedPrimaryName}</div>
+                {displayExpandedSecondaryName ? (
+                    <div className="dual-card__expanded-title dual-card__expanded-title--secondary">
+                        {displayExpandedSecondaryName}
+                    </div>
+                ) : null}
+            </div>
 
             <div className="dual-card__expanded-header">
                 <div className="dual-card__meta">
@@ -551,42 +526,13 @@ export function CompactCard({
                 </button>
             </div>
 
-            <div className="dual-card__scene-picker" ref={sceneDropdownRef}>
-                <button
-                    type="button"
-                    className={`dual-card__scene-trigger ${isSceneMenuOpen ? 'is-open' : ''}`}
-                    disabled={!sceneOptions.length}
-                    aria-expanded={isSceneMenuOpen}
-                    onPointerDown={handleSceneTriggerPointerDown}
-                    onClick={handleSceneTriggerClick}
+            <div className="dual-card__scene-picker">
+                <div
+                    className="dual-card__scene-trigger dual-card__scene-trigger--coming-soon"
+                    aria-disabled="true"
                 >
-                    <span>{sceneOptions.length ? (selectedSceneName ?? 'Scenes') : 'No scenes available'}</span>
-                    <ha-icon icon={isSceneMenuOpen ? 'mdi:chevron-up' : 'mdi:chevron-down'} className="dual-card__scene-icon" />
-                </button>
-
-                {isSceneMenuOpen && sceneOptions.length ? (
-                    <div className="dual-card__scene-menu">
-                        {sceneOptions.map((scene) => (
-                            <button
-                                key={scene.entityId}
-                                type="button"
-                                className="dual-card__scene-option"
-                                onClick={() => {
-                                    setIsSceneMenuOpen(false);
-                                    onSceneSelect?.(scene.entityId);
-                                }}
-                            >
-                                {scene.name}
-                            </button>
-                        ))}
-                    </div>
-                ) : null}
-
-                {sceneFeedbackMessage ? (
-                    <div className="dual-card__scene-feedback" role="status">
-                        {sceneFeedbackMessage}
-                    </div>
-                ) : null}
+                    <span className="dual-card__scene-placeholder">Scene selection (coming soon)</span>
+                </div>
             </div>
 
             {groupedLights.length ? (

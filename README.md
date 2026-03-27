@@ -1,5 +1,9 @@
 # Dual Axis Controller
 
+<p align="center">
+  <img src="./icon.png" alt="Dual Axis Controller icon" width="180" />
+</p>
+
 A Home Assistant custom dashboard card for lights with a single adaptive layout.
 
 The card automatically uses a compact dashboard presentation and opens the larger 2D controller when needed, so users no longer need to choose between separate `compact` and `expanded` layout modes in YAML.
@@ -38,4 +42,5 @@ layout: auto
 - The card handles compact presentation and expanded control flow automatically.
 - Tapping the compact card opens the built-in expanded popup by default.
 - If `tap_action`, `hold_action`, or `double_tap_action` are configured, the card fires those standard Home Assistant actions instead.
+- Branding assets are included as [icon.png](/Users/MattOpenHomeFoundation/Desktop/Dual Axis Controller/DAC Version 4/dual-halo-controller/icon.png) and [brand/icon.png](/Users/MattOpenHomeFoundation/Desktop/Dual Axis Controller/DAC Version 4/dual-halo-controller/brand/icon.png).
 - The bundled file produced for Home Assistant is `dual-axis-controller-v4.js`.

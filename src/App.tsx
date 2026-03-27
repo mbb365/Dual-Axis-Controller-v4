@@ -1121,12 +1121,18 @@ export function CardApp({
     const compactHue = compactValues.hue;
     const compactSaturation = compactValues.saturation;
     const compactIsOn = groupLight.state === 'on';
+    const expandedPrimaryName = groupedLights.length ? compactLightName : lightName;
+    const expandedSecondaryName = groupedLights.length
+        ? groupedLights.find((groupedLight) => groupedLight.entityId === controlledLightEntityId)?.name ?? groupedLights[0]?.name ?? null
+        : null;
 
     return (
         <div ref={rootRef}>
             <CompactCard
                 layout={resolvedLayout}
                 lightName={resolvedLayout === 'compact' ? compactLightName : lightName}
+                expandedPrimaryName={resolvedLayout === 'compact' ? undefined : expandedPrimaryName}
+                expandedSecondaryName={resolvedLayout === 'compact' ? null : expandedSecondaryName}
                 icon={icon}
                 isOn={resolvedLayout === 'compact' ? compactIsOn : isOn}
                 hue={resolvedLayout === 'compact' ? compactHue : hue}
@@ -1190,6 +1196,8 @@ export function CardApp({
                         <CompactCard
                             layout="expanded"
                             lightName={lightName}
+                            expandedPrimaryName={expandedPrimaryName}
+                            expandedSecondaryName={expandedSecondaryName}
                             icon={icon}
                             isOn={isOn}
                             hue={hue}
