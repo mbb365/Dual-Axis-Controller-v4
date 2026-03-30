@@ -155,7 +155,13 @@ export function buildGroupedLightMarkers(
             entityId: memberId,
             isOn: memberState.state === 'on',
             isActive: controlScope === 'individual' && controlledLightEntityId === memberId,
-            ...controlValues,
+            ...(uiMode === 'spectrum' && lockedSpectrumHue != null
+                ? {
+                      brightness: controlValues.brightness,
+                      hue: lockedSpectrumHue,
+                      saturation: controlValues.saturation,
+                  }
+                : controlValues),
         });
 
         return markers;

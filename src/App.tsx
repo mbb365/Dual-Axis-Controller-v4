@@ -280,6 +280,9 @@ export function CardApp({
 
         if (uiMode === 'spectrum' && selectedColorHue != null) {
             setHue(selectedColorHue);
+            if (nextLight.attributes.hs_color) {
+                setSaturation(nextLight.attributes.hs_color[1]);
+            }
             setKelvin(null);
         } else if (nextLight.attributes.hs_color) {
             setHue(nextLight.attributes.hs_color[0]);
