@@ -188,6 +188,12 @@ function ColorPicker({
                             className={`dual-card__color-swatch${selectedColorHue === swatch.hue ? ' is-active' : ''}`}
                             aria-label={swatch.label}
                             title={swatch.label}
+                            onPointerDown={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                onColorSelect?.(swatch.hue);
+                                setIsOpen(false);
+                            }}
                             onClick={() => {
                                 onColorSelect?.(swatch.hue);
                                 setIsOpen(false);

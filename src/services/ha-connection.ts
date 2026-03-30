@@ -45,18 +45,65 @@ export async function callLightService(
         return;
     }
 
-    const serviceData: Record<string, any> = { entity_id: entityId };
-    if (params.brightness !== undefined) {
-        serviceData.brightness = Math.round((params.brightness / 100) * 255);
+    const buildServiceData = (
+        overrides: Partial<{
+            brightness: number;
+            hs_color: [number, number];
+            color_temp: number;
+            color_temp_kelvin: number;
+        }> = {}
+    ) => {
+        const mergedParams = { ...params, ...overrides };
+        const serviceData: Record<string, any> = { entity_id: entityId };
+
+        if (mergedParams.brightness !== undefined) {
+            serviceData.brightness = Math.round((mergedParams.brightness / 100) * 255);
+        }
+        if (mergedParams.hs_color !== undefined) {
+            serviceData.hs_color = mergedParams.hs_color;
+        }
+        if (mergedParams.color_temp !== undefined) {
+            serviceData.color_temp = mergedParams.color_temp;
+        }
+        if (mergedParams.color_temp_kelvin !== undefined) {
+            serviceData.color_temp_kelvin = mergedParams.color_temp_kelvin;
+        }
+
+        return serviceData;
+    };
+
+    try {
+        await hass.callService('light', 'turn_on', buildServiceData());
+    } catch (error) {
+        // Some Tuya-backed lights reject richer payloads intermittently. Retry with a
+        // simpler, more broadly supported payload before surfacing the failure.
+        try {
+            if (params.color_temp_kelvin !== undefined) {
+                await hass.callService(
+                    'light',
+                    'turn_on',
+                    buildServiceData({
+                        color_temp: Math.round(1000000 / params.color_temp_kelvin),
+                        color_temp_kelvin: undefined,
+                    })
+                );
+                return;
+            }
+
+            if (params.hs_color !== undefined && params.brightness !== undefined) {
+                await hass.callService(
+                    'light',
+                    'turn_on',
+                    buildServiceData({
+                        brightness: undefined,
+                    })
+                );
+                return;
+            }
+        } catch {
+            // Fall through to the original error below.
+        }
+
+        throw error;
     }
-    if (params.hs_color !== undefined) {
-        serviceData.hs_color = params.hs_color;
-    }
-    if (params.color_temp !== undefined) {
-        serviceData.color_temp = params.color_temp;
-    }
-    if (params.color_temp_kelvin !== undefined) {
-        serviceData.color_temp_kelvin = params.color_temp_kelvin;
-    }
-    await hass.callService('light', 'turn_on', serviceData);
 }

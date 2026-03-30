@@ -81,6 +81,7 @@ export function Halo({
     mode,
 }: HaloProps) {
     const trackpadRef = useRef<HTMLDivElement>(null);
+    const overlayRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [pulse, setPulse] = useState<HaloPulse | null>(null);
     const [dragSelection, setDragSelection] = useState<HaloSelection | null>(null);
@@ -172,9 +173,10 @@ export function Halo({
     }, [isDiscoMode, isDragging, lockedSpectrumHue, markers, mode]);
 
     const selectionFromClientPosition = (clientX: number, clientY: number): HaloSelection | null => {
-        if (!trackpadRef.current) return null;
+        const hitRect = overlayRef.current?.getBoundingClientRect() ?? trackpadRef.current?.getBoundingClientRect();
+        if (!hitRect) return null;
         return selectionFromClientPoint(
-            trackpadRef.current.getBoundingClientRect(),
+            hitRect,
             clientX,
             clientY,
             mode,
@@ -393,7 +395,7 @@ export function Halo({
                     }}
                 >
                 </div>
-                <div className="halo__overlay">
+                <div ref={overlayRef} className="halo__overlay">
                 {isDiscoMode ? (
                     <div className="halo__disco-overlay">
                         <div className="halo__disco-message">
