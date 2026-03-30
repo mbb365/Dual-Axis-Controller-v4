@@ -1,263 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CompactCard, type CardLayout, type GroupedLightOption, type SceneOption } from './components/CompactCard';
+import { PopupCardShell } from './components/card-popup/PopupCardShell';
 import type { HaloMarker } from './components/Halo';
 import { callLightService, getLightState } from './services/ha-connection';
+import { usePopupSheet } from './hooks/use-popup-sheet';
+import {
+    buildCompactCardState,
+    buildGroupedAggregateControlState,
+    buildGroupedLightMarkers,
+    buildGroupedLights,
+    buildGroupRelativeSnapshot,
+} from './utils/card-view-state';
+import {
+    buildQueuedControlCommand,
+    controlValuesFromPosition,
+    getGroupedLightIds,
+    kelvinFromXPosition,
+    type ControlScope,
+    type GroupRelativeSnapshot,
+    type QueuedControlCommand,
+    xFractionFromHueSat,
+} from './utils/control-state';
 
 const CONTROL_SEND_INTERVAL_MS = 120;
 const CONTROL_SETTLE_DELAY_MS = 220;
-const DISCO_SEND_INTERVAL_MS = 480;
-
-interface QueuedControlCommand {
-    entityId: string;
-    turnOn: boolean;
-    brightness: number;
-    hue: number;
-    saturation: number;
-    uiMode: 'temperature' | 'spectrum';
-    colorTempKelvin?: number;
-    hsColor?: [number, number];
-}
-
-type ControlScope = 'group' | 'group-relative' | 'individual';
-
-interface GroupRelativeMemberSnapshot {
-    entityId: string;
-    light: NonNullable<ReturnType<typeof getLightState>>;
-    x: number;
-    brightness: number;
-}
-
-interface GroupRelativeSnapshot {
-    mode: 'temperature' | 'spectrum';
-    averageBrightness: number;
-    averageX: number;
-    members: GroupRelativeMemberSnapshot[];
-}
-
-function getGroupedLightIds(light: ReturnType<typeof getLightState>) {
-    if (!light) return [];
-
-    const memberIds = [...(light.attributes.entity_id ?? []), ...(light.attributes.lights ?? [])];
-    return Array.from(new Set(memberIds.filter((memberId) => memberId.startsWith('light.') && memberId !== light.entity_id)));
-}
-
-function formatGroupedLightValue(
-    state: {
-        state?: string;
-        attributes?: {
-            brightness?: number;
-        };
-    } | undefined
-) {
-    if (!state || state.state !== 'on') return 'Off';
-    if (state.attributes?.brightness == null) return 'On';
-    return `${Math.round((state.attributes.brightness / 255) * 100)}%`;
-}
-
-function getBrightnessPercent(
-    state: {
-        state?: string;
-        attributes?: {
-            brightness?: number;
-        };
-    } | null | undefined
-) {
-    if (!state || state.state !== 'on') return 0;
-    if (state.attributes?.brightness == null) return 100;
-    return Math.round((state.attributes.brightness / 255) * 100);
-}
-
-function getMarkerControlValues(
-    state: ReturnType<typeof getLightState>,
-    mode: 'temperature' | 'spectrum'
-): Pick<HaloMarker, 'brightness' | 'hue' | 'saturation'> {
-    const brightness = getBrightnessPercent(state);
-    if (!state || state.state !== 'on') {
-        return {
-            brightness,
-            hue: mode === 'temperature' ? 38 : 0,
-            saturation: 0,
-        };
-    }
-
-    if (mode === 'temperature') {
-        if (state.attributes.color_temp_kelvin != null || state.attributes.color_temp != null) {
-            const nextKelvin =
-                state.attributes.color_temp_kelvin ||
-                Math.round(1000000 / state.attributes.color_temp!);
-            const minMireds = state.attributes.min_mireds || 153;
-            const maxMireds = state.attributes.max_mireds || 500;
-            const mireds = state.attributes.color_temp || 1000000 / nextKelvin;
-            const x = Math.max(0, Math.min(1, (mireds - minMireds) / (maxMireds - minMireds)));
-
-            return x < 0.5
-                ? {
-                      brightness,
-                      hue: 210,
-                      saturation: Math.round((0.5 - x) * 200),
-                  }
-                : {
-                      brightness,
-                      hue: 38,
-                      saturation: Math.round((x - 0.5) * 200),
-                  };
-        }
-
-        if (state.attributes.hs_color) {
-            const [hue, saturation] = state.attributes.hs_color;
-            return { brightness, hue, saturation };
-        }
-
-        return { brightness, hue: 38, saturation: 0 };
-    }
-
-    if (state.attributes.hs_color) {
-        const [hue, saturation] = state.attributes.hs_color;
-        return { brightness, hue, saturation };
-    }
-
-    if (state.attributes.color_temp_kelvin != null || state.attributes.color_temp != null) {
-        const nextKelvin =
-            state.attributes.color_temp_kelvin ||
-            Math.round(1000000 / state.attributes.color_temp!);
-        const minMireds = state.attributes.min_mireds || 153;
-        const maxMireds = state.attributes.max_mireds || 500;
-        const mireds = state.attributes.color_temp || 1000000 / nextKelvin;
-        const x = Math.max(0, Math.min(1, (mireds - minMireds) / (maxMireds - minMireds)));
-
-        return x < 0.5
-            ? {
-                  brightness,
-                  hue: 210,
-                  saturation: Math.round((0.5 - x) * 200),
-              }
-            : {
-                  brightness,
-                  hue: 38,
-                  saturation: Math.round((x - 0.5) * 200),
-              };
-    }
-
-    return { brightness, hue: 0, saturation: 0 };
-}
-
-function xFractionFromHueSat(hue: number, saturation: number, mode: 'temperature' | 'spectrum') {
-    if (mode === 'spectrum') {
-        return Math.max(0, Math.min(1, hue / 360));
-    }
-
-    const leftHue = 210;
-    const rightHue = 38;
-    const coolDist = Math.abs(hue - leftHue);
-    const warmDist = Math.abs(hue - rightHue);
-
-    if (coolDist < warmDist) {
-        return Math.max(0, Math.min(1, 0.5 - saturation / 200));
-    }
-
-    return Math.max(0, Math.min(1, 0.5 + saturation / 200));
-}
-
-function controlValuesFromPosition(
-    x: number,
-    brightness: number,
-    mode: 'temperature' | 'spectrum'
-): Pick<HaloMarker, 'brightness' | 'hue' | 'saturation'> {
-    const clampedX = Math.max(0, Math.min(1, x));
-    const clampedBrightness = Math.max(0, Math.min(100, brightness));
-
-    if (mode === 'spectrum') {
-        return {
-            brightness: clampedBrightness,
-            hue: Math.round(clampedX * 360),
-            saturation: 100,
-        };
-    }
-
-    if (clampedX < 0.5) {
-        return {
-            brightness: clampedBrightness,
-            hue: 210,
-            saturation: Math.round((0.5 - clampedX) * 200),
-        };
-    }
-
-    return {
-        brightness: clampedBrightness,
-        hue: 38,
-        saturation: Math.round((clampedX - 0.5) * 200),
-    };
-}
-
-function supportsTemperatureForLight(light: ReturnType<typeof getLightState>) {
-    const supportedColorModes = light?.attributes.supported_color_modes || [];
-    return (
-        supportedColorModes.includes('color_temp') ||
-        light?.attributes.color_mode === 'color_temp' ||
-        light?.attributes.min_mireds != null ||
-        light?.attributes.max_mireds != null
-    );
-}
-
-function supportsSpectrumForLight(light: ReturnType<typeof getLightState>) {
-    const supportedColorModes = light?.attributes.supported_color_modes || [];
-    return (
-        supportedColorModes.some((mode) => ['hs', 'xy', 'rgb', 'rgbw', 'rgbww'].includes(mode)) ||
-        (light?.attributes.hs_color != null && light?.attributes.color_mode !== 'color_temp')
-    );
-}
-
-function kelvinFromXPosition(x: number, light: ReturnType<typeof getLightState>) {
-    const minMireds = light?.attributes.min_mireds || 153;
-    const maxMireds = light?.attributes.max_mireds || 500;
-    const mireds = Math.round(minMireds + Math.max(0, Math.min(1, x)) * (maxMireds - minMireds));
-    return Math.round(1000000 / mireds);
-}
-
-function buildQueuedControlCommand(
-    entityId: string,
-    targetLight: ReturnType<typeof getLightState>,
-    values: Pick<HaloMarker, 'brightness' | 'hue' | 'saturation'>,
-    mode: 'temperature' | 'spectrum'
-): QueuedControlCommand {
-    const command: QueuedControlCommand = {
-        entityId,
-        turnOn: values.brightness > 0,
-        brightness: values.brightness,
-        hue: values.hue,
-        saturation: values.saturation,
-        uiMode: mode,
-    };
-
-    if (!command.turnOn) {
-        return command;
-    }
-
-    if (mode === 'temperature') {
-        const x = xFractionFromHueSat(values.hue, values.saturation, 'temperature');
-        const nextKelvin = kelvinFromXPosition(x, targetLight);
-
-        if (supportsTemperatureForLight(targetLight)) {
-            command.colorTempKelvin = nextKelvin;
-        } else if (supportsSpectrumForLight(targetLight)) {
-            command.hsColor = [values.hue, values.saturation];
-        }
-
-        return command;
-    }
-
-    if (supportsSpectrumForLight(targetLight)) {
-        command.hsColor = [values.hue, values.saturation];
-        return command;
-    }
-
-    if (supportsTemperatureForLight(targetLight)) {
-        const fallbackX = xFractionFromHueSat(values.hue, values.saturation, 'temperature');
-        command.colorTempKelvin = kelvinFromXPosition(fallbackX, targetLight);
-    }
-
-    return command;
-}
+const DISCO_SEND_INTERVAL_MS = 1100;
 
 export interface CardAppProps {
     hass: any;
@@ -275,7 +42,7 @@ export function CardApp({
     entityId,
     icon = 'mdi:lightbulb',
     name,
-    layout = 'compact',
+    layout = 'auto',
     onTapAction,
     onHoldAction,
     onDoubleTapAction,
@@ -328,7 +95,6 @@ export function CardApp({
             name: sceneState.attributes?.friendly_name || sceneEntityId.replace(/^scene\./, '').replace(/_/g, ' '),
         }))
         .sort((left, right) => left.name.localeCompare(right.name));
-    const rootRef = useRef<HTMLDivElement>(null);
     const lastCommandTime = useRef(0);
     const isUserInteracting = useRef(false);
     const interactionTimeout = useRef<number | null>(null);
@@ -336,124 +102,71 @@ export function CardApp({
     const controlBatchInFlight = useRef(false);
     const discoSendInterval = useRef<number | null>(null);
     const discoBatchInFlight = useRef(false);
+    const discoStepRef = useRef(0);
+    const hassRef = useRef(hass);
     const sceneFeedbackTimeout = useRef<number | null>(null);
     const pendingControlCommand = useRef<QueuedControlCommand[] | null>(null);
     const lastSentControlCommand = useRef<QueuedControlCommand[] | null>(null);
     const groupRelativeLayout = useRef<GroupRelativeSnapshot | null>(null);
     const groupRelativeInteractionSnapshot = useRef<GroupRelativeSnapshot | null>(null);
+    const hasExplicitModeSelection = useRef(false);
 
-    const [containerWidth, setContainerWidth] = useState(0);
     const [hue, setHue] = useState(0);
     const [saturation, setSaturation] = useState(0);
     const [brightness, setBrightness] = useState(50);
     const [kelvin, setKelvin] = useState<number | null>(null);
     const [isOn, setIsOn] = useState(false);
     const [uiMode, setUiMode] = useState<'temperature' | 'spectrum'>('temperature');
+    const [selectedColorHue, setSelectedColorHue] = useState<number | null>(null);
     const [selectedSceneName, setSelectedSceneName] = useState<string | null>(null);
     const [sceneFeedbackMessage, setSceneFeedbackMessage] = useState<string | null>(null);
     const [showPopup, setShowPopup] = useState(false);
     const [isDiscoMode, setIsDiscoMode] = useState(false);
-    const [popupDragOffset, setPopupDragOffset] = useState(0);
-    const [isPopupDragging, setIsPopupDragging] = useState(false);
-    const [isPopupClosing, setIsPopupClosing] = useState(false);
-    const popupDragStartY = useRef<number | null>(null);
-    const popupDragPointerId = useRef<number | null>(null);
-    const popupDragLastY = useRef<number | null>(null);
-    const popupDragLastAt = useRef<number | null>(null);
-    const popupDragMoved = useRef(false);
-    const popupCloseTimeout = useRef<number | null>(null);
 
-    const groupedLights: GroupedLightOption[] = groupedLightIds
-        .map((memberId) => {
-            const memberState = getLightState(hass, memberId);
-            if (!memberState) return null;
-            const previewMode =
-                memberState.attributes.color_temp_kelvin != null ||
-                memberState.attributes.color_temp != null ||
-                memberState.attributes.color_mode === 'color_temp'
-                    ? 'temperature'
-                    : 'spectrum';
-            const previewValues = getMarkerControlValues(memberState, previewMode);
-
-            return {
-                entityId: memberId,
-                isOn: memberState.state === 'on',
-                name: memberState.attributes.friendly_name || memberId,
-                previewBrightness: previewValues.brightness,
-                previewHue: previewValues.hue,
-                previewMode,
-                previewSaturation: previewValues.saturation,
-                value: formatGroupedLightValue(memberState),
-            };
-        })
-        .filter((member): member is GroupedLightOption => member != null);
+    const groupedLights: GroupedLightOption[] = buildGroupedLights(hass, groupedLightIds);
     const isDarkMode = Boolean(hass?.themes?.darkMode);
     const groupedLightIdsKey = groupedLightIds.join('|');
+    const {
+        closePopup,
+        handlePopupDragEnd,
+        handlePopupDragMove,
+        handlePopupDragStart,
+        handlePopupHandleClick,
+        isMobilePopupViewport,
+        isPopupClosing,
+        isPopupDragging,
+        mobilePopupTopInset,
+        popupDragOffset,
+    } = usePopupSheet(showPopup, setShowPopup);
 
-    const groupedLightMarkers =
+    const groupedLightMarkers: HaloMarker[] = buildGroupedLightMarkers(
+        hass,
+        groupedLightIds,
+        uiMode,
+        controlScope,
+        controlledLightEntityId,
         controlScope === 'group-relative' && groupRelativeLayout.current?.mode === uiMode
-            ? groupRelativeLayout.current.members.map((member) => ({
-                  entityId: member.entityId,
-                  isOn: member.brightness > 0,
-                  isActive: false,
-                  ...controlValuesFromPosition(member.x, member.brightness, uiMode),
-              }))
-            : groupedLightIds.reduce<HaloMarker[]>((markers, memberId) => {
-                  const memberState = getLightState(hass, memberId);
-                  if (!memberState) return markers;
-
-                  const controlValues = getMarkerControlValues(memberState, uiMode);
-
-                  markers.push({
-                      entityId: memberId,
-                      isOn: memberState.state === 'on',
-                      isActive: controlScope === 'individual' && controlledLightEntityId === memberId,
-                      ...controlValues,
-                  });
-
-                  return markers;
-              }, []);
+            ? groupRelativeLayout.current
+            : null,
+        uiMode === 'spectrum' ? selectedColorHue : null
+    );
 
     const buildGroupRelativeLayout = useCallback(() => {
-        const members = groupedLightIds
-            .map((memberId) => {
-                const memberLight = getLightState(hass, memberId);
-                if (!memberLight) return null;
+        const snapshot = buildGroupRelativeSnapshot(
+            hass,
+            groupedLightIds,
+            uiMode,
+            uiMode === 'spectrum' ? selectedColorHue : null
+        );
 
-                const values = getMarkerControlValues(memberLight, uiMode);
-                return {
-                    entityId: memberId,
-                    light: memberLight,
-                    x: xFractionFromHueSat(values.hue, values.saturation, uiMode),
-                    brightness: values.brightness,
-                };
-            })
-            .filter(
-                (
-                    member
-                ): member is {
-                    entityId: string;
-                    light: NonNullable<ReturnType<typeof getLightState>>;
-                    x: number;
-                    brightness: number;
-                } => member != null
-            );
-
-        if (!members.length) {
+        if (!snapshot) {
             groupRelativeLayout.current = null;
             return null;
         }
 
-        const snapshot = {
-            mode: uiMode,
-            averageX: members.reduce((total, member) => total + member.x, 0) / members.length,
-            averageBrightness: members.reduce((total, member) => total + member.brightness, 0) / members.length,
-            members,
-        };
-
         groupRelativeLayout.current = snapshot;
         return snapshot;
-    }, [groupedLightIds, hass, uiMode]);
+    }, [groupedLightIds, hass, selectedColorHue, uiMode]);
 
     const ensureGroupRelativeLayout = useCallback(() => {
         if (groupRelativeLayout.current?.mode === uiMode) {
@@ -468,19 +181,8 @@ export function CardApp({
     }, [activeEntityId]);
 
     useEffect(() => {
-        if (!rootRef.current) return;
-
-        const node = rootRef.current;
-        const observer = new ResizeObserver(([entry]) => {
-            if (!entry) return;
-            setContainerWidth(entry.contentRect.width);
-        });
-
-        observer.observe(node);
-        setContainerWidth(node.getBoundingClientRect().width);
-
-        return () => observer.disconnect();
-    }, []);
+        hassRef.current = hass;
+    }, [hass]);
 
     useEffect(() => {
         return () => {
@@ -499,33 +201,14 @@ export function CardApp({
             if (sceneFeedbackTimeout.current) {
                 window.clearTimeout(sceneFeedbackTimeout.current);
             }
-            if (popupCloseTimeout.current) {
-                window.clearTimeout(popupCloseTimeout.current);
-            }
         };
     }, []);
-
-    useEffect(() => {
-        if (!showPopup) {
-            setPopupDragOffset(0);
-            setIsPopupDragging(false);
-            setIsPopupClosing(false);
-            popupDragStartY.current = null;
-            popupDragPointerId.current = null;
-            popupDragLastY.current = null;
-            popupDragLastAt.current = null;
-            popupDragMoved.current = false;
-            if (popupCloseTimeout.current) {
-                window.clearTimeout(popupCloseTimeout.current);
-                popupCloseTimeout.current = null;
-            }
-        }
-    }, [showPopup]);
 
     useEffect(() => {
         pendingControlCommand.current = null;
         lastSentControlCommand.current = null;
         groupRelativeInteractionSnapshot.current = null;
+        hasExplicitModeSelection.current = false;
         if (controlSendTimeout.current) {
             window.clearTimeout(controlSendTimeout.current);
             controlSendTimeout.current = null;
@@ -549,16 +232,39 @@ export function CardApp({
             const relativeLayout = ensureGroupRelativeLayout();
 
             if (relativeLayout && !isUserInteracting.current && !isDiscoMode) {
-                const averageValues = controlValuesFromPosition(
+                setIsOn(relativeLayout.members.some((member) => member.brightness > 0));
+                setHue(uiMode === 'spectrum' && selectedColorHue != null ? selectedColorHue : controlValuesFromPosition(
                     relativeLayout.averageX,
                     relativeLayout.averageBrightness,
                     uiMode
+                ).hue);
+                setSaturation(
+                    uiMode === 'spectrum' && selectedColorHue != null
+                        ? Math.round(relativeLayout.averageX * 100)
+                        : controlValuesFromPosition(relativeLayout.averageX, relativeLayout.averageBrightness, uiMode)
+                              .saturation
                 );
-                setIsOn(relativeLayout.members.some((member) => member.brightness > 0));
-                setHue(averageValues.hue);
-                setSaturation(averageValues.saturation);
-                setBrightness(averageValues.brightness);
+                setBrightness(relativeLayout.averageBrightness);
                 setKelvin(uiMode === 'temperature' ? kelvinFromXPosition(relativeLayout.averageX, groupLight ?? light) : null);
+            }
+            return;
+        }
+
+        if (groupedLightIds.length && controlScope !== 'individual' && groupLight) {
+            const aggregate = buildGroupedAggregateControlState(
+                hass,
+                groupedLightIds,
+                uiMode,
+                groupLight,
+                uiMode === 'spectrum' ? selectedColorHue : null
+            );
+
+            if (!isUserInteracting.current && !isDiscoMode) {
+                setIsOn(aggregate.isOn);
+                setHue(aggregate.hue);
+                setSaturation(aggregate.saturation);
+                setBrightness(aggregate.brightness);
+                setKelvin(aggregate.kelvin);
             }
             return;
         }
@@ -572,11 +278,15 @@ export function CardApp({
             setBrightness(Math.round((nextLight.attributes.brightness / 255) * 100));
         }
 
-        if (nextLight.attributes.hs_color) {
+        if (uiMode === 'spectrum' && selectedColorHue != null) {
+            setHue(selectedColorHue);
+            setKelvin(null);
+        } else if (nextLight.attributes.hs_color) {
             setHue(nextLight.attributes.hs_color[0]);
             setSaturation(nextLight.attributes.hs_color[1]);
         }
 
+        if (uiMode !== 'spectrum' || selectedColorHue == null) {
         if (nextLight.attributes.color_temp_kelvin != null || nextLight.attributes.color_temp != null) {
             const nextKelvin =
                 nextLight.attributes.color_temp_kelvin ||
@@ -606,8 +316,21 @@ export function CardApp({
             const mireds = Math.round(minM + Math.max(0, Math.min(1, x)) * (maxM - minM));
             setKelvin(Math.round(1000000 / mireds));
         }
+        }
 
         setUiMode((previousMode) => {
+            if (hasExplicitModeSelection.current) {
+                if (previousMode === 'spectrum' && supportsSpectrum) {
+                    return 'spectrum';
+                }
+
+                if (previousMode === 'temperature' && supportsTemperature) {
+                    return 'temperature';
+                }
+
+                return supportsSpectrum ? 'spectrum' : 'temperature';
+            }
+
             const isColorMode = ['hs', 'xy', 'rgb', 'rgbw', 'rgbww'].includes(
                 nextLight.attributes.color_mode || ''
             );
@@ -633,10 +356,22 @@ export function CardApp({
 
             return 'temperature';
         });
-    }, [activeEntityId, controlScope, ensureGroupRelativeLayout, groupLight, groupedLightIds, hass, isDiscoMode, light, supportsSpectrum, uiMode]);
+    }, [
+        activeEntityId,
+        controlScope,
+        ensureGroupRelativeLayout,
+        groupLight,
+        groupedLightIds,
+        hass,
+        isDiscoMode,
+        light,
+        supportsSpectrum,
+        supportsTemperature,
+        selectedColorHue,
+        uiMode,
+    ]);
 
-    const resolvedLayout: CardLayout =
-        layout === 'auto' ? (containerWidth >= 420 ? 'expanded' : 'compact') : layout;
+    const resolvedLayout: CardLayout = layout === 'expanded' ? 'expanded' : 'compact';
 
     const markInteraction = useCallback((delayMs: number) => {
         isUserInteracting.current = true;
@@ -681,6 +416,7 @@ export function CardApp({
         setSaturation(100);
         setBrightness(88);
         setIsOn(true);
+        discoStepRef.current = 0;
         markInteraction(1200);
         setIsDiscoMode(true);
     }, [markInteraction]);
@@ -705,12 +441,12 @@ export function CardApp({
             return;
         }
 
-        let step = 0;
         const targetIds = groupedLightIds.length ? groupedLightIds : [activeEntityId];
 
         const applyDiscoFrame = () => {
             if (!targetIds.length || discoBatchInFlight.current) return;
 
+            const step = discoStepRef.current;
             const baseHue = (step * 34) % 360;
             const commands = targetIds.map((targetId, index) => {
                 const hueOffset = targetIds.length > 1 ? (360 / targetIds.length) * index : 0;
@@ -734,7 +470,7 @@ export function CardApp({
 
             void Promise.all(
                 commands.map((command) =>
-                    callLightService(hass, command.entityId, true, {
+                    callLightService(hassRef.current, command.entityId, true, {
                         brightness: command.brightness,
                         hs_color: command.hsColor,
                     })
@@ -743,7 +479,7 @@ export function CardApp({
                 discoBatchInFlight.current = false;
             });
 
-            step += 1;
+            discoStepRef.current += 1;
         };
 
         applyDiscoFrame();
@@ -756,7 +492,7 @@ export function CardApp({
             }
             discoBatchInFlight.current = false;
         };
-    }, [activeEntityId, groupedLightIdsKey, hass, isDiscoMode]);
+    }, [activeEntityId, groupedLightIdsKey, isDiscoMode]);
 
     const hasMeaningfulControlDelta = useCallback(
         (left: QueuedControlCommand | null, right: QueuedControlCommand) => {
@@ -964,28 +700,36 @@ export function CardApp({
         ]
     );
 
-    const handleGroupRelativeDoubleSelect = useCallback(
+    const handlePadDoubleSelect = useCallback(
         (nextHue: number, nextSaturation: number, nextBrightness: number) => {
-            if (controlScope !== 'group-relative' || !groupedLightIds.length) return;
-
             stopDiscoMode();
             beginControlInteraction();
             setSelectedSceneName(null);
-            setControlScope('group');
             setIsOn(nextBrightness > 0);
             setHue(nextHue);
             setSaturation(nextSaturation);
             setBrightness(nextBrightness);
 
+            const shouldMoveWholeGroup = groupedLightIds.length > 0;
+            if (shouldMoveWholeGroup) {
+                setControlScope('group');
+                setControlledLightEntityId(null);
+            }
+
             if (uiMode === 'temperature') {
-                setKelvin(kelvinFromXPosition(xFractionFromHueSat(nextHue, nextSaturation, 'temperature'), groupLight ?? light));
+                setKelvin(
+                    kelvinFromXPosition(
+                        xFractionFromHueSat(nextHue, nextSaturation, 'temperature'),
+                        shouldMoveWholeGroup ? (groupLight ?? light) : (getLightState(hass, activeEntityIdRef.current) ?? light)
+                    )
+                );
             } else {
                 setKelvin(null);
             }
 
             const nextCommand = buildQueuedControlCommand(
-                entityId,
-                groupLight ?? light,
+                shouldMoveWholeGroup ? entityId : activeEntityIdRef.current,
+                shouldMoveWholeGroup ? (groupLight ?? light) : (getLightState(hass, activeEntityIdRef.current) ?? light),
                 {
                     brightness: nextBrightness,
                     hue: nextHue,
@@ -1001,12 +745,12 @@ export function CardApp({
         },
         [
             beginControlInteraction,
-            controlScope,
             entityId,
             endControlInteraction,
             flushQueuedControlCommand,
             groupLight,
             groupedLightIds.length,
+            hass,
             light,
             queueControlCommand,
             stopDiscoMode,
@@ -1028,8 +772,12 @@ export function CardApp({
         markInteraction(1000);
         groupRelativeLayout.current = null;
         groupRelativeInteractionSnapshot.current = null;
-        callLightService(hass, activeEntityIdRef.current, nextState);
-    }, [hass, isOn, markInteraction, stopDiscoMode]);
+
+        const targetEntityId =
+            controlScope === 'individual' && controlledLightEntityId ? controlledLightEntityId : entityId;
+
+        callLightService(hass, targetEntityId, nextState);
+    }, [controlScope, controlledLightEntityId, entityId, hass, isOn, markInteraction, stopDiscoMode]);
 
     const handleCompactToggle = useCallback(() => {
         if (!groupLight) return;
@@ -1050,13 +798,123 @@ export function CardApp({
             if (mode === 'spectrum' && !supportsSpectrum) return;
 
             stopDiscoMode();
+            clearInteractionLock();
+            hasExplicitModeSelection.current = true;
             setSelectedSceneName(null);
+            setSelectedColorHue(null);
             setUiMode(mode);
-            markInteraction(1000);
             groupRelativeLayout.current = null;
             groupRelativeInteractionSnapshot.current = null;
         },
-        [markInteraction, stopDiscoMode, supportsSpectrum, supportsTemperature]
+        [clearInteractionLock, stopDiscoMode, supportsSpectrum, supportsTemperature]
+    );
+
+    const handleColorSelect = useCallback(
+        (nextHue: number) => {
+            stopDiscoMode();
+            beginControlInteraction();
+            hasExplicitModeSelection.current = true;
+            setSelectedSceneName(null);
+            setSelectedColorHue(nextHue);
+            setUiMode('spectrum');
+            const currentX =
+                uiMode === 'spectrum' && selectedColorHue != null
+                    ? Math.max(0, Math.min(1, saturation / 100))
+                    : xFractionFromHueSat(hue, saturation, uiMode);
+            const lockedSaturation = Math.round(currentX * 100);
+
+            if (controlScope === 'group-relative' && groupedLightIds.length) {
+                const snapshot = groupRelativeInteractionSnapshot.current ?? ensureGroupRelativeLayout();
+                if (!snapshot) {
+                    return;
+                }
+
+                const nextRelativeLayout: GroupRelativeSnapshot = {
+                    mode: 'spectrum',
+                    averageX: snapshot.averageX,
+                    averageBrightness: snapshot.averageBrightness,
+                    members: snapshot.members.map((member) => ({
+                        ...member,
+                    })),
+                };
+
+                groupRelativeLayout.current = nextRelativeLayout;
+                groupRelativeInteractionSnapshot.current = nextRelativeLayout;
+
+                setIsOn(nextRelativeLayout.members.some((member) => member.brightness > 0));
+                setHue(nextHue);
+                setSaturation(Math.round(nextRelativeLayout.averageX * 100));
+                setBrightness(nextRelativeLayout.averageBrightness);
+                setKelvin(null);
+
+                const relativeCommands = nextRelativeLayout.members.map((member) =>
+                    buildQueuedControlCommand(
+                        member.entityId,
+                        member.light,
+                        {
+                            brightness: member.brightness,
+                            hue: nextHue,
+                            saturation: Math.round(member.x * 100),
+                        },
+                        'spectrum'
+                    )
+                );
+
+                queueControlCommand(relativeCommands);
+                flushQueuedControlCommand(true);
+                markInteraction(900);
+                return;
+            }
+
+            const nextBrightness = Math.max(1, brightness);
+            const targetEntityId =
+                controlScope === 'individual' && controlledLightEntityId ? controlledLightEntityId : entityId;
+            const targetLight = getLightState(hass, targetEntityId) ?? light ?? groupLight;
+            if (!targetLight) return;
+
+            groupRelativeLayout.current = null;
+            groupRelativeInteractionSnapshot.current = null;
+            setIsOn(true);
+            setHue(nextHue);
+            setSaturation(lockedSaturation);
+            setBrightness(nextBrightness);
+            setKelvin(null);
+
+            const nextCommand = buildQueuedControlCommand(
+                controlScope === 'group-relative' ? entityId : targetEntityId,
+                controlScope === 'group-relative' ? (groupLight ?? targetLight) : targetLight,
+                {
+                    brightness: nextBrightness,
+                    hue: nextHue,
+                    saturation: lockedSaturation,
+                },
+                'spectrum'
+            );
+
+            queueControlCommand([nextCommand]);
+            flushQueuedControlCommand(true);
+            markInteraction(900);
+        },
+        [
+            brightness,
+            beginControlInteraction,
+            controlScope,
+            controlledLightEntityId,
+            entityId,
+            ensureGroupRelativeLayout,
+            flushQueuedControlCommand,
+            groupLight,
+            groupedLightIds.length,
+            hass,
+            hue,
+            light,
+            markInteraction,
+            queueControlCommand,
+            selectedColorHue,
+            saturation,
+            stopDiscoMode,
+            uiMode,
+        ]
     );
 
     const handleSceneSelect = useCallback(
@@ -1138,25 +996,30 @@ export function CardApp({
         if (nextScope === 'group-relative') {
             const relativeLayout = ensureGroupRelativeLayout();
             if (relativeLayout) {
-                const averageValues = controlValuesFromPosition(
-                    relativeLayout.averageX,
-                    relativeLayout.averageBrightness,
-                    uiMode
-                );
                 setIsOn(relativeLayout.members.some((member) => member.brightness > 0));
-                setHue(averageValues.hue);
-                setSaturation(averageValues.saturation);
-                setBrightness(averageValues.brightness);
+                if (uiMode === 'spectrum' && selectedColorHue != null) {
+                    setHue(selectedColorHue);
+                    setSaturation(Math.round(relativeLayout.averageX * 100));
+                } else {
+                    const averageValues = controlValuesFromPosition(
+                        relativeLayout.averageX,
+                        relativeLayout.averageBrightness,
+                        uiMode
+                    );
+                    setHue(averageValues.hue);
+                    setSaturation(averageValues.saturation);
+                }
+                setBrightness(relativeLayout.averageBrightness);
                 setKelvin(uiMode === 'temperature' ? kelvinFromXPosition(relativeLayout.averageX, groupLight ?? light) : null);
             }
         }
 
         setControlScope(nextScope);
-    }, [ensureGroupRelativeLayout, groupLight, light, stopDiscoMode, uiMode]);
+    }, [ensureGroupRelativeLayout, groupLight, light, selectedColorHue, stopDiscoMode, uiMode]);
 
     if (!groupLight) {
         return (
-            <div ref={rootRef}>
+            <div>
                 <div
                     style={{
                         padding: '20px',
@@ -1176,152 +1039,69 @@ export function CardApp({
         );
     }
 
-    const compactLightName = name || groupLight.attributes.friendly_name || entityId;
-    const compactUiMode =
-        groupLight.attributes.color_temp_kelvin != null ||
-        groupLight.attributes.color_temp != null ||
-        groupLight.attributes.color_mode === 'color_temp' ||
-        !supportsSpectrumForLight(groupLight)
-            ? 'temperature'
-            : supportsSpectrumForLight(groupLight)
-              ? 'spectrum'
-              : uiMode;
-    const compactValues = getMarkerControlValues(groupLight, compactUiMode);
-    const compactKelvin =
-        compactUiMode === 'temperature'
-            ? groupLight.attributes.color_temp_kelvin ||
-              (groupLight.attributes.color_temp != null
-                  ? Math.round(1000000 / groupLight.attributes.color_temp)
-                  : kelvinFromXPosition(
-                        xFractionFromHueSat(compactValues.hue, compactValues.saturation, 'temperature'),
-                        groupLight
-                    ))
-            : null;
-    const compactBrightness = compactValues.brightness;
-    const compactHue = compactValues.hue;
-    const compactSaturation = compactValues.saturation;
-    const compactIsOn = groupLight.state === 'on';
-    const expandedPrimaryName = groupedLights.length ? compactLightName : lightName;
-    const expandedSecondaryName = groupedLights.length
-        ? groupedLights.find((groupedLight) => groupedLight.entityId === controlledLightEntityId)?.name ?? groupedLights[0]?.name ?? null
-        : null;
-    const isMobilePreviewRoute =
-        typeof window !== 'undefined' &&
-        (window.location.pathname.endsWith('/mobile.html') || window.location.pathname === '/mobile.html');
-    const isMobilePopupViewport = typeof window !== 'undefined' ? isMobilePreviewRoute || window.innerWidth <= 640 : false;
-    const mobilePopupTopInset = 'calc(env(safe-area-inset-top, 0px) + 56px)';
-
-    const closePopup = useCallback(() => {
-        setShowPopup(false);
-        setPopupDragOffset(0);
-        setIsPopupDragging(false);
-        setIsPopupClosing(false);
-        popupDragStartY.current = null;
-        popupDragPointerId.current = null;
-        popupDragLastY.current = null;
-        popupDragLastAt.current = null;
-        popupDragMoved.current = false;
-        if (popupCloseTimeout.current) {
-            window.clearTimeout(popupCloseTimeout.current);
-            popupCloseTimeout.current = null;
-        }
-    }, []);
-
-    const animatePopupClose = useCallback((startingOffset: number) => {
-        const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
-        const targetOffset = Math.max(viewportHeight, startingOffset + 240);
-
-        setIsPopupDragging(false);
-        setIsPopupClosing(true);
-        setPopupDragOffset(startingOffset);
-
-        if (popupCloseTimeout.current) {
-            window.clearTimeout(popupCloseTimeout.current);
-        }
-
-        window.requestAnimationFrame(() => {
-            setPopupDragOffset(targetOffset);
-        });
-
-        popupCloseTimeout.current = window.setTimeout(() => {
-            closePopup();
-        }, 420);
-    }, [closePopup]);
-
-    const handlePopupDragStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-        if (!isMobilePopupViewport) return;
-
-        if (popupCloseTimeout.current) {
-            window.clearTimeout(popupCloseTimeout.current);
-            popupCloseTimeout.current = null;
-        }
-
-        popupDragStartY.current = event.clientY;
-        popupDragPointerId.current = event.pointerId;
-        popupDragLastY.current = event.clientY;
-        popupDragLastAt.current = performance.now();
-        popupDragMoved.current = false;
-        setIsPopupDragging(true);
-        setIsPopupClosing(false);
-        setPopupDragOffset(0);
-        event.currentTarget.setPointerCapture(event.pointerId);
-    }, [isMobilePopupViewport]);
-
-    const handlePopupDragMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-        if (popupDragPointerId.current !== event.pointerId || popupDragStartY.current == null) return;
-
-        const nextOffset = Math.max(0, event.clientY - popupDragStartY.current);
-        if (nextOffset > 6) {
-            popupDragMoved.current = true;
-        }
-        popupDragLastY.current = event.clientY;
-        popupDragLastAt.current = performance.now();
-        setPopupDragOffset(nextOffset);
-    }, []);
-
-    const handlePopupDragEnd = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-        if (popupDragPointerId.current !== event.pointerId || popupDragStartY.current == null) return;
-
-        const finalOffset = Math.max(0, event.clientY - popupDragStartY.current);
-        const now = performance.now();
-        const lastY = popupDragLastY.current ?? event.clientY;
-        const lastAt = popupDragLastAt.current ?? now;
-        const deltaY = event.clientY - lastY;
-        const deltaTime = Math.max(1, now - lastAt);
-        const velocityPxPerMs = deltaY / deltaTime;
-        const shouldClose = finalOffset > 88 || velocityPxPerMs > 0.55;
-        popupDragStartY.current = null;
-        popupDragPointerId.current = null;
-        popupDragLastY.current = null;
-        popupDragLastAt.current = null;
-
-        if (shouldClose) {
-            animatePopupClose(finalOffset);
-        } else {
-            setIsPopupDragging(false);
-            setIsPopupClosing(false);
-            setPopupDragOffset(0);
-        }
-
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-            event.currentTarget.releasePointerCapture(event.pointerId);
-        }
-    }, [animatePopupClose]);
-
-    const handlePopupHandleClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-        event.stopPropagation();
-        if (!isMobilePopupViewport) return;
-
-        if (popupDragMoved.current) {
-            popupDragMoved.current = false;
-            return;
-        }
-
-        animatePopupClose(Math.max(18, popupDragOffset));
-    }, [animatePopupClose, isMobilePopupViewport, popupDragOffset]);
+    const {
+        compactLightName,
+        compactUiMode,
+        compactBrightness,
+        compactHue,
+        compactSaturation,
+        compactKelvin,
+        compactIsOn,
+        expandedPrimaryName,
+        expandedSecondaryName,
+    } = buildCompactCardState({
+        hass,
+        groupLight,
+        groupedLightIds,
+        entityId,
+        name,
+        uiMode,
+        lightName,
+        groupedLights,
+        controlScope,
+        controlledLightEntityId,
+    });
+    const expandedCardProps = {
+        isDarkMode,
+        lightName,
+        expandedPrimaryName,
+        expandedSecondaryName,
+        icon,
+        isOn,
+        hue,
+        saturation,
+        brightness,
+        kelvin,
+        uiMode,
+        canUseTemperature: supportsTemperature,
+        canUseSpectrum: supportsSpectrum,
+        onModeChange: handleModeChange,
+        onControlsChange: handleControlsChange,
+        selectedColorHue,
+        onColorSelect: handleColorSelect,
+        onControlInteractionStart: beginControlInteraction,
+        onControlInteractionEnd: handleControlInteractionEnd,
+        isDiscoMode,
+        onDiscoModeTrigger: startDiscoMode,
+        onDiscoModeExit: stopDiscoMode,
+        onPadMarkerSelect: groupedLights.length ? handleGroupedLightSelect : undefined,
+        onPadDoubleSelect: handlePadDoubleSelect,
+        onToggle: handleToggle,
+        sceneOptions,
+        selectedSceneName,
+        sceneFeedbackMessage,
+        groupedLights,
+        groupedLightMarkers,
+        controlScope,
+        controlledLightEntityId,
+        onControlScopeChange: handleControlScopeChange,
+        onGroupedLightSelect: handleGroupedLightSelect,
+        onGroupedLightToggle: handleGroupedLightToggle,
+        onSceneSelect: handleSceneSelect,
+    } as const;
 
     return (
-        <div ref={rootRef}>
+        <div>
             <CompactCard
                 layout={resolvedLayout}
                 isDarkMode={isDarkMode}
@@ -1339,13 +1119,15 @@ export function CardApp({
                 canUseSpectrum={supportsSpectrum}
                 onModeChange={handleModeChange}
                 onControlsChange={handleControlsChange}
+                selectedColorHue={selectedColorHue}
+                onColorSelect={handleColorSelect}
                 onControlInteractionStart={beginControlInteraction}
                 onControlInteractionEnd={handleControlInteractionEnd}
                 isDiscoMode={isDiscoMode}
                 onDiscoModeTrigger={startDiscoMode}
                 onDiscoModeExit={stopDiscoMode}
                 onPadMarkerSelect={groupedLights.length ? handleGroupedLightSelect : undefined}
-                onPadDoubleSelect={handleGroupRelativeDoubleSelect}
+                            onPadDoubleSelect={handlePadDoubleSelect}
                 onToggle={resolvedLayout === 'compact' ? handleCompactToggle : handleToggle}
                 sceneOptions={sceneOptions}
                 selectedSceneName={selectedSceneName}
@@ -1364,112 +1146,20 @@ export function CardApp({
             />
 
             {resolvedLayout === 'compact' && showPopup ? (
-                <div
-                    onClick={closePopup}
-                    style={{
-                        position: 'fixed',
-                        inset: 0,
-                        background: `rgba(15, 23, 42, ${Math.max(0.08, 0.18 - popupDragOffset / 900)})`,
-                        display: 'grid',
-                        alignItems: isMobilePopupViewport ? 'end' : 'center',
-                        justifyItems: 'center',
-                        padding: isMobilePopupViewport ? `${mobilePopupTopInset} 0 0` : 'max(12px, min(24px, 4vw))',
-                        boxSizing: 'border-box',
-                        zIndex: 1000,
-                    }}
+                <PopupCardShell
+                    isMobilePopupViewport={isMobilePopupViewport}
+                    mobilePopupTopInset={mobilePopupTopInset}
+                    popupDragOffset={popupDragOffset}
+                    isPopupDragging={isPopupDragging}
+                    isPopupClosing={isPopupClosing}
+                    onClose={closePopup}
+                    onDragStart={handlePopupDragStart}
+                    onDragMove={handlePopupDragMove}
+                    onDragEnd={handlePopupDragEnd}
+                    onHandleClick={handlePopupHandleClick}
                 >
-                    <div
-                        onClick={(event) => event.stopPropagation()}
-                        style={{
-                            width: isMobilePopupViewport ? '100%' : 'min(100%, 460px)',
-                            maxWidth: '100%',
-                            height: isMobilePopupViewport ? `calc(100dvh - ${mobilePopupTopInset})` : undefined,
-                            maxHeight: isMobilePopupViewport
-                                ? `calc(100dvh - ${mobilePopupTopInset})`
-                                : 'calc(100dvh - max(24px, min(48px, 8vw)))',
-                            background: 'var(--ha-card-background, var(--card-background-color, #ffffff))',
-                            borderRadius: isMobilePopupViewport ? '18px 18px 0 0' : 'var(--ha-card-border-radius, 12px)',
-                            boxShadow: 'var(--ha-card-box-shadow, 0 8px 24px rgba(15, 23, 42, 0.16))',
-                            border: '1px solid var(--divider-color, rgba(0, 0, 0, 0.08))',
-                            borderBottom: isMobilePopupViewport ? '0' : '1px solid var(--divider-color, rgba(0, 0, 0, 0.08))',
-                            padding: isMobilePopupViewport ? '14px 14px 0' : '16px',
-                            boxSizing: 'border-box',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            overflowY: isMobilePopupViewport ? 'hidden' : 'auto',
-                            overscrollBehavior: 'contain',
-                            WebkitOverflowScrolling: 'touch',
-                            transform: `translateY(${popupDragOffset}px)`,
-                            transition: isPopupDragging
-                                ? 'none'
-                                : `transform ${isPopupClosing ? '0.42s cubic-bezier(0.22, 1, 0.36, 1)' : '0.22s ease'}, box-shadow 0.22s ease`,
-                        }}
-                    >
-                        <div
-                            onPointerDown={handlePopupDragStart}
-                            onPointerMove={handlePopupDragMove}
-                            onPointerUp={handlePopupDragEnd}
-                            onPointerCancel={handlePopupDragEnd}
-                            onClick={handlePopupHandleClick}
-                            style={{
-                                display: isMobilePopupViewport ? 'flex' : 'none',
-                                justifyContent: 'center',
-                                alignItems: 'center',
-                                minHeight: '22px',
-                                margin: '-4px 0 10px',
-                                touchAction: 'none',
-                                cursor: 'grab',
-                            }}
-                            aria-label="Drag down to close"
-                        >
-                            <div
-                                style={{
-                                    width: '42px',
-                                    height: '5px',
-                                    borderRadius: '999px',
-                                    background: 'rgba(143, 154, 168, 0.55)',
-                                }}
-                            />
-                        </div>
-                        <CompactCard
-                            layout="expanded"
-                            isDarkMode={isDarkMode}
-                            lightName={lightName}
-                            expandedPrimaryName={expandedPrimaryName}
-                            expandedSecondaryName={expandedSecondaryName}
-                            icon={icon}
-                            isOn={isOn}
-                            hue={hue}
-                            saturation={saturation}
-                            brightness={brightness}
-                            kelvin={kelvin}
-                            uiMode={uiMode}
-                            canUseTemperature={supportsTemperature}
-                            canUseSpectrum={supportsSpectrum}
-                            onModeChange={handleModeChange}
-                            onControlsChange={handleControlsChange}
-                            onControlInteractionStart={beginControlInteraction}
-                            onControlInteractionEnd={handleControlInteractionEnd}
-                            isDiscoMode={isDiscoMode}
-                            onDiscoModeTrigger={startDiscoMode}
-                            onDiscoModeExit={stopDiscoMode}
-                            onPadMarkerSelect={groupedLights.length ? handleGroupedLightSelect : undefined}
-                            onPadDoubleSelect={handleGroupRelativeDoubleSelect}
-                            onToggle={handleToggle}
-                            sceneOptions={sceneOptions}
-                            selectedSceneName={selectedSceneName}
-                            sceneFeedbackMessage={sceneFeedbackMessage}
-                            groupedLights={groupedLights}
-                            groupedLightMarkers={groupedLightMarkers}
-                            controlScope={controlScope}
-                            controlledLightEntityId={controlledLightEntityId}
-                            onControlScopeChange={handleControlScopeChange}
-                            onGroupedLightSelect={handleGroupedLightSelect}
-                            onGroupedLightToggle={handleGroupedLightToggle}
-                            onSceneSelect={handleSceneSelect}
-                        />
-                    </div>
-                </div>
+                    <CompactCard layout="expanded" {...expandedCardProps} />
+                </PopupCardShell>
             ) : null}
         </div>
     );

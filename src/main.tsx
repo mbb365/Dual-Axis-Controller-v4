@@ -53,7 +53,13 @@ const demoScenes = {
     },
 } as const;
 
-const groupedLightIds = ['light.preview_floor', 'light.preview_desk', 'light.preview_corner'] as const;
+const groupedLightIds = [
+    'light.preview_floor',
+    'light.preview_desk',
+    'light.preview_corner',
+    'light.preview_shelf',
+    'light.preview_wall',
+] as const;
 
 function buildGroupState(memberStates: Record<string, any>) {
     const memberValues = groupedLightIds.map((entityId) => memberStates[entityId]).filter(Boolean);
@@ -124,6 +130,34 @@ function MockHomeAssistant() {
                 min_mireds: 153,
                 max_mireds: 500,
                 hs_color: [282, 72] as [number, number],
+                supported_color_modes: ['color_temp', 'hs'],
+            },
+        },
+        'light.preview_shelf': {
+            state: 'on',
+            attributes: {
+                friendly_name: 'Shelf light',
+                brightness: 142,
+                color_mode: 'color_temp',
+                color_temp: 298,
+                color_temp_kelvin: 3356,
+                min_mireds: 153,
+                max_mireds: 500,
+                hs_color: [46, 26] as [number, number],
+                supported_color_modes: ['color_temp', 'hs'],
+            },
+        },
+        'light.preview_wall': {
+            state: 'on',
+            attributes: {
+                friendly_name: 'Wall wash',
+                brightness: 214,
+                color_mode: 'hs',
+                color_temp: null as unknown as number,
+                color_temp_kelvin: null as unknown as number,
+                min_mireds: 153,
+                max_mireds: 500,
+                hs_color: [198, 58] as [number, number],
                 supported_color_modes: ['color_temp', 'hs'],
             },
         },

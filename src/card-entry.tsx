@@ -30,8 +30,8 @@ class DualControllerCard extends HTMLElement {
             throw new Error('Dual Axis Controller: please define an "entity" in the card config.');
         }
 
-        if (config.layout && !['compact', 'expanded', 'auto'].includes(config.layout)) {
-            throw new Error('Dual Axis Controller: layout must be "compact", "expanded", or "auto".');
+        if (config.layout && config.layout !== 'auto') {
+            throw new Error('Dual Axis Controller: layout must be "auto".');
         }
 
         this._config = config;
@@ -55,19 +55,10 @@ class DualControllerCard extends HTMLElement {
     }
 
     public getCardSize() {
-        return this._config?.layout === 'expanded' ? 7 : 1;
+        return 1;
     }
 
     public getGridOptions() {
-        if (this._config?.layout === 'expanded') {
-            return {
-                rows: 7,
-                columns: 6,
-                min_rows: 6,
-                min_columns: 4,
-            };
-        }
-
         return {
             rows: 1,
             columns: 6,
@@ -83,7 +74,7 @@ class DualControllerCard extends HTMLElement {
         return {
             type: 'custom:dual-controller-v3',
             entity: lightEntity || 'light.my_light',
-            layout: 'compact',
+            layout: 'auto',
         };
     }
 
@@ -137,7 +128,7 @@ class DualControllerCard extends HTMLElement {
                 entityId={this._config.entity}
                 icon={this._config.icon}
                 name={this._config.name}
-                layout={this._config.layout ?? 'compact'}
+                layout={this._config.layout ?? 'auto'}
                 onTapAction={this._config.tap_action ? () => this._dispatchAction('tap') : undefined}
                 onHoldAction={this._config.hold_action ? () => this._dispatchAction('hold') : undefined}
                 onDoubleTapAction={
@@ -159,6 +150,6 @@ if (!customCards.some((card) => card.type === 'dual-controller-v3')) {
         name: 'Dual Axis Controller',
         description: 'Compact dashboard launcher and expanded light controller for Home Assistant.',
         preview: true,
-        documentationURL: 'https://developers.home-assistant.io/docs/frontend/custom-ui/custom-card/',
+        documentationURL: 'https://github.com/mbb365/Dual-Axis-Controller-v4',
     });
 }
