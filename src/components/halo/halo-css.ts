@@ -9,9 +9,15 @@ export const HALO_CSS = `
     aspect-ratio: 1 / 1;
     box-sizing: border-box;
     overflow: visible;
-    --halo-pad-inset: 4px;
+    --halo-pad-inset: 2px;
     --halo-pad-border-width: 6px;
     --halo-overlay-inset: calc(var(--halo-pad-inset) + var(--halo-pad-border-width));
+}
+
+.halo__pad-shell.is-borderless-style {
+    --halo-pad-inset: 0px;
+    --halo-pad-border-width: 0px;
+    --halo-overlay-inset: 0px;
 }
 
 .halo__pad {
@@ -87,6 +93,7 @@ export const HALO_CSS = `
 .halo__pad.is-style-matrix {
     border: 0;
     background: transparent;
+    overflow: visible;
 }
 
 .halo__pad.is-style-plotter::before {
@@ -107,11 +114,11 @@ export const HALO_CSS = `
 
 .halo__matrix-surface {
     position: absolute;
-    inset: 0;
+    inset: -6px;
     display: grid;
     grid-template-columns: repeat(32, minmax(0, 1fr));
     grid-template-rows: repeat(32, minmax(0, 1fr));
-    padding: 8px;
+    padding: 0;
     gap: 1px;
     pointer-events: none;
 }
@@ -122,7 +129,7 @@ export const HALO_CSS = `
     display: grid;
     grid-template-columns: repeat(10, minmax(0, 1fr));
     grid-template-rows: repeat(10, minmax(0, 1fr));
-    padding: 10px;
+    padding: 0;
     gap: 4px;
     pointer-events: auto;
 }
@@ -452,9 +459,15 @@ export const HALO_CSS = `
 
 @container (max-width: 420px) {
     .halo__pad-shell {
-        --halo-pad-inset: 3px;
+        --halo-pad-inset: 2px;
         --halo-pad-border-width: 6px;
         --halo-overlay-inset: calc(var(--halo-pad-inset) + var(--halo-pad-border-width));
+    }
+
+    .halo__pad-shell.is-borderless-style {
+        --halo-pad-inset: 0px;
+        --halo-pad-border-width: 0px;
+        --halo-overlay-inset: 0px;
     }
 
     .halo__indicator {

@@ -177,6 +177,10 @@
     margin-top: calc(var(--dual-card-section-gap) * -0.93);
 }
 
+.dual-card__pad-block--borderless {
+    margin-top: calc(var(--dual-card-section-gap) * -0.34);
+}
+
 .dual-card__meta {
     min-width: 0;
 }
@@ -626,7 +630,7 @@
 
 .dual-card__group-section {
     margin-top: 2px;
-    padding-top: 16px;
+    padding-top: 6px;
     border-top: 1px solid rgba(183, 192, 203, 0.52);
     display: grid;
     gap: 12px;
@@ -1032,18 +1036,18 @@
     }
 
     .dual-card--theme-dark .dual-card__group-mobile-trigger {
-        background: rgba(30, 41, 59, 0.92);
+        background: #262626;
         color: rgba(226, 232, 240, 0.92);
-        border-color: rgba(148, 163, 184, 0.28);
+        border-color: rgba(184, 184, 184, 0.2);
     }
 
     .dual-card--theme-dark .dual-card__group-mobile-trigger.is-open {
-        background: rgba(37, 50, 71, 0.96);
-        border-color: rgba(148, 163, 184, 0.5);
+        background: #303030;
+        border-color: rgba(184, 184, 184, 0.38);
     }
 
     .dual-card--theme-dark .dual-card__group-list.is-mobile-open {
-        border-color: rgba(148, 163, 184, 0.24);
+        border-color: rgba(184, 184, 184, 0.18);
         background: rgba(15, 23, 42, 0.96);
         box-shadow: 0 16px 34px rgba(0, 0, 0, 0.28);
     }
@@ -1096,6 +1100,14 @@
         -webkit-backdrop-filter: none;
     }
 
+    .dual-card--theme-dark.dual-card--compact .dual-card__title {
+        color: rgba(241, 245, 249, 0.94);
+    }
+
+    .dual-card--theme-dark.dual-card--compact .dual-card__subtitle {
+        color: rgba(203, 213, 225, 0.76);
+    }
+
     .dual-card--theme-dark .dual-card__icon-shell {
         box-shadow: none;
         border-color: rgba(255, 255, 255, 0.08);
@@ -1109,9 +1121,9 @@
     .dual-card--theme-dark .dual-card__scope-pill,
     .dual-card--theme-dark .dual-card__group-item,
     .dual-card--theme-dark .dual-card__scene-option {
-        background: rgba(30, 41, 59, 0.92);
+        background: #262626;
         color: rgba(226, 232, 240, 0.92);
-        border-color: rgba(148, 163, 184, 0.14);
+        border-color: rgba(184, 184, 184, 0.12);
     }
 
     .dual-card--theme-dark .dual-card__mode-pill.is-active,
@@ -1120,9 +1132,9 @@
     .dual-card--theme-dark .dual-card__pad-style-button.is-active,
     .dual-card--theme-dark .dual-card__scope-pill.is-active,
     .dual-card--theme-dark .dual-card__group-item.is-active {
-        background: rgba(37, 50, 71, 0.96);
-        border-color: rgba(148, 163, 184, 0.5);
-        --dual-card-stroke-color: rgba(148, 163, 184, 0.5);
+        background: #303030;
+        border-color: rgba(184, 184, 184, 0.34);
+        --dual-card-stroke-color: rgba(184, 184, 184, 0.34);
         color: rgba(241, 245, 249, 0.98);
     }
 
@@ -1132,14 +1144,14 @@
     .dual-card--theme-dark .dual-card__pad-style-button:hover,
     .dual-card--theme-dark .dual-card__scene-trigger:not(:disabled):hover,
     .dual-card--theme-dark .dual-card__group-item:hover {
-        border-color: rgba(148, 163, 184, 0.42);
-        --dual-card-stroke-color: rgba(148, 163, 184, 0.42);
-        background: rgba(36, 48, 68, 0.94);
+        border-color: rgba(184, 184, 184, 0.28);
+        --dual-card-stroke-color: rgba(184, 184, 184, 0.28);
+        background: #2c2c2c;
     }
 
     .dual-card--theme-dark .dual-card__scene-option:hover {
-        border-color: rgba(148, 163, 184, 0.32);
-        --dual-card-stroke-color: rgba(148, 163, 184, 0.32);
+        border-color: rgba(184, 184, 184, 0.22);
+        --dual-card-stroke-color: rgba(184, 184, 184, 0.22);
     }
 
     .dual-card--theme-dark .dual-card__group-item.is-handoff {
@@ -1147,9 +1159,9 @@
     }
 
     .dual-card--theme-dark .dual-card__scene-trigger.is-open {
-        background: rgba(37, 50, 71, 0.96);
-        border-color: rgba(148, 163, 184, 0.5);
-        --dual-card-stroke-color: rgba(148, 163, 184, 0.5);
+        background: #303030;
+        border-color: rgba(184, 184, 184, 0.34);
+        --dual-card-stroke-color: rgba(184, 184, 184, 0.34);
     }
 
     .dual-card--theme-dark .dual-card__scene-placeholder {

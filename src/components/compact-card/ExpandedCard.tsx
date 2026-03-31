@@ -433,7 +433,13 @@ export function ExpandedCard({
 
             <ExpandedMetaHeader leadingValue={leadingValue} brightness={brightness} />
 
-            <div className="dual-card__pad-block">
+            <div
+                className={`dual-card__pad-block${
+                    padVisualStyle === 'matrix' || padVisualStyle === 'pixel'
+                        ? ' dual-card__pad-block--borderless'
+                        : ''
+                }`}
+            >
                 <Halo
                     hue={hue}
                     saturation={saturation}

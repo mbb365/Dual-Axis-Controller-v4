@@ -542,7 +542,11 @@ export function Halo({
     return (
         <div className="halo">
             <style>{HALO_CSS}</style>
-            <div className="halo__pad-shell">
+            <div
+                className={classNames('halo__pad-shell', {
+                    'is-borderless-style': visualStyle === 'matrix' || visualStyle === 'pixel',
+                })}
+            >
                 <div
                     ref={trackpadRef}
                     className={classNames(
