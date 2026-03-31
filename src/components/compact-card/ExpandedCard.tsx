@@ -143,6 +143,7 @@ function ColorPicker({
 }: Pick<ExpandedCardProps, 'isDarkMode' | 'selectedColorHue' | 'onColorSelect'>) {
     const [isOpen, setIsOpen] = useState(false);
     const pickerRef = useRef<HTMLDivElement>(null);
+    const closeTimeoutRef = useRef<number | null>(null);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -156,6 +157,29 @@ function ColorPicker({
         window.addEventListener('pointerdown', handlePointerDown);
         return () => window.removeEventListener('pointerdown', handlePointerDown);
     }, [isOpen]);
+
+    useEffect(() => {
+        return () => {
+            if (closeTimeoutRef.current) {
+                window.clearTimeout(closeTimeoutRef.current);
+            }
+        };
+    }, []);
+
+    const applyColorSelection = (nextHue: number) => {
+        onColorSelect?.(nextHue);
+
+        if (closeTimeoutRef.current) {
+            window.clearTimeout(closeTimeoutRef.current);
+        }
+
+        // Keep the menu in place until the current tap fully settles so the
+        // touch/click cannot fall through to the control underneath on mobile.
+        closeTimeoutRef.current = window.setTimeout(() => {
+            setIsOpen(false);
+            closeTimeoutRef.current = null;
+        }, 140);
+    };
 
     return (
         <div className="dual-card__color-picker" ref={pickerRef}>
@@ -191,12 +215,11 @@ function ColorPicker({
                             onPointerDown={(event) => {
                                 event.preventDefault();
                                 event.stopPropagation();
-                                onColorSelect?.(swatch.hue);
-                                setIsOpen(false);
+                                applyColorSelection(swatch.hue);
                             }}
-                            onClick={() => {
-                                onColorSelect?.(swatch.hue);
-                                setIsOpen(false);
+                            onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
                             }}
                             style={{ ['--dual-card-swatch-color' as string]: `hsl(${swatch.hue}, 100%, 50%)` }}
                         />

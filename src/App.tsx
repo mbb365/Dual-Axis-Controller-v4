@@ -15,6 +15,7 @@ import {
     buildQueuedControlCommand,
     controlValuesFromPosition,
     getGroupedLightIds,
+    getMarkerControlValues,
     kelvinFromXPosition,
     type ControlScope,
     type GroupRelativeSnapshot,
@@ -290,35 +291,22 @@ export function CardApp({
         }
 
         if (uiMode !== 'spectrum' || selectedColorHue == null) {
-        if (nextLight.attributes.color_temp_kelvin != null || nextLight.attributes.color_temp != null) {
-            const nextKelvin =
-                nextLight.attributes.color_temp_kelvin ||
-                Math.round(1000000 / nextLight.attributes.color_temp!);
-            setKelvin(nextKelvin);
+            const temperatureValues = getMarkerControlValues(nextLight, 'temperature');
+            setHue(temperatureValues.hue);
+            setSaturation(temperatureValues.saturation);
 
-            const minM = nextLight.attributes.min_mireds || 153;
-            const maxM = nextLight.attributes.max_mireds || 500;
-            const lightMireds = nextLight.attributes.color_temp || 1000000 / nextKelvin;
-            const x = Math.max(0, Math.min(1, (lightMireds - minM) / (maxM - minM)));
-
-            if (x < 0.5) {
-                setHue(210);
-                setSaturation(Math.round((0.5 - x) * 200));
-            } else {
-                setHue(38);
-                setSaturation(Math.round((x - 0.5) * 200));
+            if (nextLight.attributes.color_temp_kelvin != null || nextLight.attributes.color_temp != null) {
+                const nextKelvin =
+                    nextLight.attributes.color_temp_kelvin ||
+                    Math.round(1000000 / nextLight.attributes.color_temp!);
+                setKelvin(nextKelvin);
+            } else if (nextLight.attributes.hs_color) {
+                const derivedKelvin = kelvinFromXPosition(
+                    xFractionFromHueSat(temperatureValues.hue, temperatureValues.saturation, 'temperature'),
+                    nextLight
+                );
+                setKelvin(derivedKelvin);
             }
-        } else if (nextLight.attributes.hs_color) {
-            const [nextHue, nextSaturation] = nextLight.attributes.hs_color;
-            const x =
-                Math.abs(nextHue - 210) < Math.abs(nextHue - 38)
-                    ? 0.5 - nextSaturation / 200
-                    : 0.5 + nextSaturation / 200;
-            const minM = nextLight.attributes.min_mireds || 153;
-            const maxM = nextLight.attributes.max_mireds || 500;
-            const mireds = Math.round(minM + Math.max(0, Math.min(1, x)) * (maxM - minM));
-            setKelvin(Math.round(1000000 / mireds));
-        }
         }
 
         setUiMode((previousMode) => {

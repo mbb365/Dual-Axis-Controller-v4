@@ -137,7 +137,8 @@ export function CompactCard({
               ? `${Math.round(brightness)}% at ${leadingValue}`
               : 'Off';
     const compactBackground =
-        buildGroupedCompactBackground(groupedLights) ?? buildCompactBackground(isOn, hue, saturation, brightness, uiMode);
+        buildGroupedCompactBackground(groupedLights, isDarkMode) ??
+        buildCompactBackground(isOn, hue, saturation, brightness, uiMode, isDarkMode);
     const displayExpandedPrimaryName = expandedPrimaryName ?? lightName;
     const displayExpandedSecondaryName =
         expandedSecondaryName && expandedSecondaryName !== displayExpandedPrimaryName ? expandedSecondaryName : null;

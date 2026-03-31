@@ -109,8 +109,18 @@ export function buildCompactBackground(
     hue: number,
     saturation: number,
     brightness: number,
-    uiMode: 'temperature' | 'spectrum'
+    uiMode: 'temperature' | 'spectrum',
+    isDarkMode = false
 ) {
+    if (isDarkMode) {
+        if (!isOn) {
+            return 'linear-gradient(135deg, rgba(255, 255, 255, 0.032) 0%, rgba(255, 255, 255, 0.018) 100%)';
+        }
+
+        const tintColor = buildReflectionColor(true, hue, saturation, brightness, uiMode, 0.1);
+        return `linear-gradient(135deg, rgba(255, 255, 255, 0.034) 0%, rgba(255, 255, 255, 0.018) 100%), linear-gradient(135deg, rgba(0, 0, 0, 0) 0%, ${tintColor} 100%)`;
+    }
+
     if (!isOn) {
         return 'linear-gradient(135deg, #f8fafc 0%, #eef2f7 100%)';
     }
@@ -128,7 +138,7 @@ export function buildCompactBackground(
     return `linear-gradient(135deg, ${startTone} 0%, ${endTone} 100%)`;
 }
 
-export function buildGroupedCompactBackground(groupedLights: GroupedLightOption[]) {
+export function buildGroupedCompactBackground(groupedLights: GroupedLightOption[], isDarkMode = false) {
     const activeLights = groupedLights
         .filter((light) => light.isOn && light.previewBrightness > 0)
         .sort((left, right) => right.previewBrightness - left.previewBrightness)
@@ -138,19 +148,39 @@ export function buildGroupedCompactBackground(groupedLights: GroupedLightOption[
         return null;
     }
 
-    const gradientStops = activeLights.map((light, index) => {
-        const position = activeLights.length === 1 ? 100 : Math.round((index / (activeLights.length - 1)) * 100);
-        return `${buildReflectionColor(
+    const ambientAnchors = [
+        '18% 22%',
+        '78% 26%',
+        '32% 78%',
+        '82% 76%',
+    ];
+
+    const ambientLayers = activeLights.map((light, index) => {
+        const anchor = ambientAnchors[index] ?? '50% 50%';
+        const glowColor = buildReflectionColor(
             true,
             light.previewHue,
             light.previewSaturation,
             light.previewBrightness,
             light.previewMode,
-            0.42
-        )} ${position}%`;
+            isDarkMode ? 0.12 : 0.32
+        );
+        const falloffColor = buildReflectionColor(
+            true,
+            light.previewHue,
+            light.previewSaturation,
+            light.previewBrightness,
+            light.previewMode,
+            isDarkMode ? 0.04 : 0.12
+        );
+        return `radial-gradient(circle at ${anchor}, ${glowColor} 0%, ${falloffColor} 24%, rgba(255, 255, 255, 0) 56%)`;
     });
 
-    return `linear-gradient(135deg, rgba(248, 250, 252, 0.96) 0%, ${gradientStops.join(', ')})`;
+    if (isDarkMode) {
+        return `${ambientLayers.join(', ')}, linear-gradient(135deg, rgba(255, 255, 255, 0.032) 0%, rgba(255, 255, 255, 0.018) 100%)`;
+    }
+
+    return `${ambientLayers.join(', ')}, linear-gradient(135deg, rgba(248, 250, 252, 0.98) 0%, rgba(241, 245, 249, 0.94) 100%)`;
 }
 
 export function buildIconBackground(
