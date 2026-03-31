@@ -23,9 +23,7 @@ export const HALO_CSS = `
     cursor: crosshair;
     touch-action: none;
     border: var(--halo-pad-border-width) solid rgba(183, 192, 203, 0.9);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.72),
-        0 2px 8px rgba(15, 23, 42, 0.06);
+    box-shadow: none;
     transition:
         border-radius 340ms cubic-bezier(0.22, 0.68, 0.2, 1),
         transform 340ms cubic-bezier(0.22, 0.68, 0.2, 1),
@@ -60,13 +58,106 @@ export const HALO_CSS = `
         mask-image 340ms cubic-bezier(0.22, 0.68, 0.2, 1);
 }
 
+.halo__pad.is-style-pixel::before {
+    content: none;
+}
+
+.halo__pad.is-style-pixel,
+.halo__pad.is-style-pixel + .halo__overlay {
+    border-radius: 0;
+}
+
+.halo__pad.is-style-pixel {
+    border: 0;
+    background: transparent;
+}
+
+.halo__pad.is-style-orb::before {
+    background-image:
+        radial-gradient(circle at center, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.16) 24%, rgba(15, 23, 42, 0.14) 46%, rgba(255, 255, 255, 0) 56%);
+    background-size: 12.5% 12.5%;
+    background-position: center center;
+    opacity: 0.95;
+}
+
+.halo__pad.is-style-matrix::before {
+    content: none;
+}
+
+.halo__pad.is-style-matrix {
+    border: 0;
+    background: transparent;
+}
+
+.halo__pad.is-style-plotter::before {
+    background-image:
+        linear-gradient(rgba(99, 115, 148, 0.3) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(99, 115, 148, 0.3) 1px, transparent 1px);
+    background-size: 24px 24px;
+}
+
 .halo__pad::after {
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(145deg, rgba(255, 255, 255, 0.1) 0%, rgba(240, 244, 249, 0.06) 100%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    background: none;
+    box-shadow: none;
     pointer-events: none;
+}
+
+.halo__matrix-surface {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: repeat(32, minmax(0, 1fr));
+    grid-template-rows: repeat(32, minmax(0, 1fr));
+    padding: 8px;
+    gap: 1px;
+    pointer-events: none;
+}
+
+.halo__pixel-surface {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: repeat(10, minmax(0, 1fr));
+    grid-template-rows: repeat(10, minmax(0, 1fr));
+    padding: 10px;
+    gap: 4px;
+    pointer-events: auto;
+}
+
+.halo__pixel-cell-wrap {
+    appearance: none;
+    -webkit-appearance: none;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+}
+
+.halo__pixel-cell {
+    width: 100%;
+    height: 100%;
+    border-radius: 6px;
+}
+
+.halo__pixel-cell-wrap:focus-visible {
+    outline: 2px solid rgba(59, 130, 246, 0.88);
+    outline-offset: 2px;
+}
+
+.halo__matrix-node-wrap {
+    display: grid;
+    place-items: center;
+}
+
+.halo__matrix-node {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 999px;
 }
 
 .halo__pulse {
@@ -177,8 +268,7 @@ export const HALO_CSS = `
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.58),
         inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-        inset 0 0 80px rgba(168, 85, 247, 0.18),
-        0 2px 8px rgba(15, 23, 42, 0.06);
+        inset 0 0 80px rgba(168, 85, 247, 0.18);
 }
 
 .halo__pad.is-disco {
@@ -407,9 +497,7 @@ export const HALO_CSS = `
     .halo__pad {
         background-color: rgba(26, 31, 38, 0.96);
         border-color: rgba(148, 163, 184, 0.26);
-        box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.08),
-            0 2px 8px rgba(0, 0, 0, 0.14);
+        box-shadow: none;
     }
 
     .halo__pad::before {
@@ -417,8 +505,8 @@ export const HALO_CSS = `
     }
 
     .halo__pad::after {
-        background: linear-gradient(145deg, rgba(255, 255, 255, 0.02) 0%, rgba(240, 244, 249, 0.012) 100%);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        background: none;
+        box-shadow: none;
     }
 
     .halo__pad.is-off {

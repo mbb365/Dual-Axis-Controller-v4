@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Halo, type HaloMarker } from '../Halo';
+import { Halo, type HaloMarker, type HaloVisualStyle } from '../Halo';
 import type { GroupedLightOption } from '../CompactCard';
 
 interface ExpandedCardProps {
     isDarkMode: boolean;
+    displayExpandedAreaName: string | null;
     displayExpandedPrimaryName: string;
     displayExpandedSecondaryName: string | null;
     leadingValue: string;
@@ -18,6 +19,8 @@ interface ExpandedCardProps {
     selectedColorHue?: number | null;
     onModeChange: (mode: 'temperature' | 'spectrum') => void;
     onColorSelect?: (hue: number) => void;
+    padVisualStyle: HaloVisualStyle;
+    onPadVisualStyleChange?: (style: HaloVisualStyle) => void;
     onControlsChange: (h: number, s: number, b: number) => void;
     onControlInteractionStart?: () => void;
     onControlInteractionEnd?: () => void;
@@ -56,13 +59,25 @@ const COLOR_SWATCHES = [
     { hue: 328, label: 'Pink' },
 ] as const;
 
+const PAD_STYLE_OPTIONS: Array<{ style: HaloVisualStyle; label: string }> = [
+    { style: 'pixel', label: 'Pixel' },
+    { style: 'matrix', label: 'Matrix' },
+    { style: 'plotter', label: 'Plotter' },
+];
+
 function ExpandedTitleRow({
+    displayExpandedAreaName,
     displayExpandedPrimaryName,
     displayExpandedSecondaryName,
-}: Pick<ExpandedCardProps, 'displayExpandedPrimaryName' | 'displayExpandedSecondaryName'>) {
+}: Pick<ExpandedCardProps, 'displayExpandedAreaName' | 'displayExpandedPrimaryName' | 'displayExpandedSecondaryName'>) {
     return (
         <div className="dual-card__expanded-title-row">
-            <div className="dual-card__expanded-title">{displayExpandedPrimaryName}</div>
+            <div className="dual-card__expanded-title-stack">
+                {displayExpandedAreaName ? (
+                    <div className="dual-card__expanded-area">{displayExpandedAreaName} /</div>
+                ) : null}
+                <div className="dual-card__expanded-title">{displayExpandedPrimaryName}</div>
+            </div>
             {displayExpandedSecondaryName ? (
                 <div className="dual-card__expanded-title dual-card__expanded-title--secondary">
                     {displayExpandedSecondaryName}
@@ -75,11 +90,8 @@ function ExpandedTitleRow({
 function ExpandedMetaHeader({ leadingValue, brightness }: Pick<ExpandedCardProps, 'leadingValue' | 'brightness'>) {
     return (
         <div className="dual-card__expanded-header">
-            <div className="dual-card__meta">
-                <div className="dual-card__meta-value">{leadingValue}</div>
-            </div>
-            <div className="dual-card__meta dual-card__meta--right">
-                <div className="dual-card__meta-value">{Math.round(brightness)}%</div>
+            <div className="dual-card__meta-value dual-card__meta-value--combined">
+                {leadingValue} at {Math.round(brightness)}%
             </div>
         </div>
     );
@@ -230,6 +242,31 @@ function ColorPicker({
     );
 }
 
+function PadStylePicker({
+    padVisualStyle,
+    onPadVisualStyleChange,
+}: Pick<ExpandedCardProps, 'padVisualStyle' | 'onPadVisualStyleChange'>) {
+    return (
+        <div className="dual-card__pad-style-picker" role="group" aria-label="Controller pad style">
+            {PAD_STYLE_OPTIONS.map((option) => (
+                <button
+                    key={option.style}
+                    type="button"
+                    className={`dual-card__pad-style-button ${padVisualStyle === option.style ? 'is-active' : ''}`}
+                    aria-label={option.label}
+                    title={option.label}
+                    onClick={() => onPadVisualStyleChange?.(option.style)}
+                >
+                    <span
+                        className={`dual-card__pad-style-preview dual-card__pad-style-preview--${option.style}`}
+                        aria-hidden="true"
+                    />
+                </button>
+            ))}
+        </div>
+    );
+}
+
 function GroupedLightsSection({
     groupedLights,
     controlScope,
@@ -347,6 +384,7 @@ function GroupedLightsSection({
 
 export function ExpandedCard({
     isDarkMode,
+    displayExpandedAreaName,
     displayExpandedPrimaryName,
     displayExpandedSecondaryName,
     leadingValue,
@@ -361,6 +399,8 @@ export function ExpandedCard({
     selectedColorHue,
     onModeChange,
     onColorSelect,
+    padVisualStyle,
+    onPadVisualStyleChange,
     onControlsChange,
     onControlInteractionStart,
     onControlInteractionEnd,
@@ -386,30 +426,34 @@ export function ExpandedCard({
     return (
         <div className={`dual-card dual-card--expanded${isDarkMode ? ' dual-card--theme-dark' : ''}`}>
             <ExpandedTitleRow
+                displayExpandedAreaName={displayExpandedAreaName}
                 displayExpandedPrimaryName={displayExpandedPrimaryName}
                 displayExpandedSecondaryName={displayExpandedSecondaryName}
             />
 
             <ExpandedMetaHeader leadingValue={leadingValue} brightness={brightness} />
 
-            <Halo
-                hue={hue}
-                saturation={saturation}
-                brightness={brightness}
-                isOn={isOn}
-                lockedSpectrumHue={uiMode === 'spectrum' ? selectedColorHue : null}
-                markers={groupedLightMarkers}
-                onChange={onControlsChange}
-                onInteractionStart={onControlInteractionStart}
-                onInteractionEnd={onControlInteractionEnd}
-                isDiscoMode={isDiscoMode}
-                onDiscoModeTrigger={onDiscoModeTrigger}
-                onDiscoModeExit={onDiscoModeExit}
-                onMarkerSelect={onPadMarkerSelect}
-                onDoubleSelect={onPadDoubleSelect}
-                onToggle={onToggle}
-                mode={uiMode}
-            />
+            <div className="dual-card__pad-block">
+                <Halo
+                    hue={hue}
+                    saturation={saturation}
+                    brightness={brightness}
+                    isOn={isOn}
+                    lockedSpectrumHue={uiMode === 'spectrum' ? selectedColorHue : null}
+                    visualStyle={padVisualStyle}
+                    markers={groupedLightMarkers}
+                    onChange={onControlsChange}
+                    onInteractionStart={onControlInteractionStart}
+                    onInteractionEnd={onControlInteractionEnd}
+                    isDiscoMode={isDiscoMode}
+                    onDiscoModeTrigger={onDiscoModeTrigger}
+                    onDiscoModeExit={onDiscoModeExit}
+                    onMarkerSelect={onPadMarkerSelect}
+                    onDoubleSelect={onPadDoubleSelect}
+                    onToggle={onToggle}
+                    mode={uiMode}
+                />
+            </div>
 
             <ModeControls
                 uiMode={uiMode}
@@ -422,11 +466,17 @@ export function ExpandedCard({
                 onToggle={onToggle}
             />
 
-            <ColorPicker
-                isDarkMode={isDarkMode}
-                selectedColorHue={selectedColorHue}
-                onColorSelect={onColorSelect}
-            />
+            <div className="dual-card__utility-row">
+                <ColorPicker
+                    isDarkMode={isDarkMode}
+                    selectedColorHue={selectedColorHue}
+                    onColorSelect={onColorSelect}
+                />
+                <PadStylePicker
+                    padVisualStyle={padVisualStyle}
+                    onPadVisualStyleChange={onPadVisualStyleChange}
+                />
+            </div>
 
             <GroupedLightsSection
                 groupedLights={groupedLights}

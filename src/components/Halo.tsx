@@ -4,11 +4,29 @@ import { HALO_CSS } from './halo/halo-css';
 import {
     buildIndicatorShadow,
     buildPadBackground,
+    buildSurfaceNodeColor,
     buildTemperatureIndicatorColor,
     selectionFromClientPosition as selectionFromClientPoint,
+    selectionFromFractions,
+    yPosFromBrightness,
     type HaloSelection,
+    type HaloVisualStyle,
     xPosFromHueSat,
 } from './halo/halo-utils';
+export type { HaloVisualStyle } from './halo/halo-utils';
+
+const PIXEL_GRID_SIZE = 10;
+const PIXEL_GRID_CELLS = Array.from({ length: PIXEL_GRID_SIZE * PIXEL_GRID_SIZE }, (_, index) => ({
+    column: index % PIXEL_GRID_SIZE,
+    key: index,
+    row: Math.floor(index / PIXEL_GRID_SIZE),
+}));
+const MATRIX_GRID_SIZE = 32;
+const MATRIX_GRID_CELLS = Array.from({ length: MATRIX_GRID_SIZE * MATRIX_GRID_SIZE }, (_, index) => ({
+    column: index % MATRIX_GRID_SIZE,
+    key: index,
+    row: Math.floor(index / MATRIX_GRID_SIZE),
+}));
 
 interface HaloProps {
     hue: number;
@@ -27,6 +45,7 @@ interface HaloProps {
     onDoubleSelect?: (hue: number, saturation: number, brightness: number) => void;
     onToggle: () => void;
     mode: 'temperature' | 'spectrum';
+    visualStyle?: HaloVisualStyle;
 }
 
 export interface HaloMarker {
@@ -79,6 +98,7 @@ export function Halo({
     onDoubleSelect,
     onToggle,
     mode,
+    visualStyle = 'plotter',
 }: HaloProps) {
     const trackpadRef = useRef<HTMLDivElement>(null);
     const overlayRef = useRef<HTMLDivElement>(null);
@@ -98,8 +118,8 @@ export function Halo({
         brightness,
         hue,
         saturation,
-        xPercent: xPosFromHueSat(hue, saturation, mode, lockedSpectrumHue),
-        yPercent: 100 - brightness,
+        xPercent: xPosFromHueSat(hue, saturation, mode, lockedSpectrumHue, visualStyle),
+        yPercent: yPosFromBrightness(brightness, visualStyle),
     });
 
     const resetSpeedRuleTracking = () => {
@@ -132,10 +152,10 @@ export function Halo({
             brightness,
             hue,
             saturation,
-            xPercent: xPosFromHueSat(hue, saturation, mode, lockedSpectrumHue),
-            yPercent: 100 - brightness,
+            xPercent: xPosFromHueSat(hue, saturation, mode, lockedSpectrumHue, visualStyle),
+            yPercent: yPosFromBrightness(brightness, visualStyle),
         };
-    }, [brightness, dragSelection, handoffSelection, hue, lockedSpectrumHue, mode, saturation]);
+    }, [brightness, dragSelection, handoffSelection, hue, lockedSpectrumHue, mode, saturation, visualStyle]);
 
     useEffect(() => {
         if (isDragging || isDiscoMode) return;
@@ -153,8 +173,8 @@ export function Halo({
             brightness: activeMarker.brightness,
             hue: activeMarker.hue,
             saturation: activeMarker.saturation,
-            xPercent: xPosFromHueSat(activeMarker.hue, activeMarker.saturation, mode, lockedSpectrumHue),
-            yPercent: 100 - activeMarker.brightness,
+            xPercent: xPosFromHueSat(activeMarker.hue, activeMarker.saturation, mode, lockedSpectrumHue, visualStyle),
+            yPercent: yPosFromBrightness(activeMarker.brightness, visualStyle),
         };
 
         setGhostSelection(latestSelectionRef.current);
@@ -170,7 +190,7 @@ export function Halo({
             setGhostSelection(null);
             handoffTimeoutRef.current = null;
         }, 260);
-    }, [isDiscoMode, isDragging, lockedSpectrumHue, markers, mode]);
+    }, [isDiscoMode, isDragging, lockedSpectrumHue, markers, mode, visualStyle]);
 
     const selectionFromClientPosition = (clientX: number, clientY: number): HaloSelection | null => {
         const hitRect = overlayRef.current?.getBoundingClientRect() ?? trackpadRef.current?.getBoundingClientRect();
@@ -180,7 +200,8 @@ export function Halo({
             clientX,
             clientY,
             mode,
-            lockedSpectrumHue
+            lockedSpectrumHue,
+            visualStyle
         );
     };
 
@@ -315,8 +336,8 @@ export function Halo({
             brightness: marker.brightness,
             hue: marker.hue,
             saturation: marker.saturation,
-            xPercent: xPosFromHueSat(marker.hue, marker.saturation, mode, lockedSpectrumHue),
-            yPercent: 100 - marker.brightness,
+            xPercent: xPosFromHueSat(marker.hue, marker.saturation, mode, lockedSpectrumHue, visualStyle),
+            yPercent: yPosFromBrightness(marker.brightness, visualStyle),
         };
         setDragSelection(markerSelection);
         setIsDragging(true);
@@ -355,27 +376,168 @@ export function Halo({
         onDoubleSelect(selection.hue, selection.saturation, selection.brightness);
     };
 
-    const padBackground = buildPadBackground(isOn, mode, lockedSpectrumHue);
+    const padBackground = buildPadBackground(isOn, mode, lockedSpectrumHue, visualStyle);
 
-    const indicatorColor =
-        mode === 'spectrum'
-            ? `hsl(${lockedSpectrumHue ?? hue}, 100%, 50%)`
-            : buildTemperatureIndicatorColor(hue, saturation, brightness);
+    const indicatorColor = buildSurfaceNodeColor(
+        mode,
+        { hue, saturation, brightness },
+        lockedSpectrumHue,
+        visualStyle
+    );
 
     const markerColor = (marker: HaloMarker) =>
         !marker.isOn
             ? 'rgba(203, 213, 225, 0.42)'
-            : mode === 'spectrum'
-              ? `hsl(${lockedSpectrumHue ?? marker.hue}, 100%, 50%)`
-              : buildTemperatureIndicatorColor(marker.hue, marker.saturation, marker.brightness);
+            : buildSurfaceNodeColor(
+                  mode,
+                  { hue: marker.hue, saturation: marker.saturation, brightness: marker.brightness },
+                  lockedSpectrumHue,
+                  visualStyle
+              );
 
     const visibleSelection = dragSelection ?? handoffSelection ?? {
         brightness,
         hue,
         saturation,
-        xPercent: xPosFromHueSat(hue, saturation, mode, lockedSpectrumHue),
-        yPercent: 100 - brightness,
+        xPercent: xPosFromHueSat(hue, saturation, mode, lockedSpectrumHue, visualStyle),
+        yPercent: yPosFromBrightness(brightness, visualStyle),
     };
+    const isBrickStyle = visualStyle === 'pixel';
+    const selectedBrickColumn = Math.max(
+        0,
+        Math.min(PIXEL_GRID_SIZE - 1, Math.floor((visibleSelection.xPercent / 100) * PIXEL_GRID_SIZE))
+    );
+    const selectedBrickRow = Math.max(
+        0,
+        Math.min(PIXEL_GRID_SIZE - 1, Math.floor((visibleSelection.yPercent / 100) * PIXEL_GRID_SIZE))
+    );
+    const pixelMarkerLookup = isBrickStyle
+        ? markers.reduce<Record<string, { color: string; isActive: boolean; isOn: boolean }>>((lookup, marker) => {
+              const markerColumn = Math.max(
+                  0,
+                  Math.min(
+                      PIXEL_GRID_SIZE - 1,
+                      Math.floor(
+                          (xPosFromHueSat(marker.hue, marker.saturation, mode, lockedSpectrumHue, visualStyle) / 100) *
+                              PIXEL_GRID_SIZE
+                      )
+                  )
+              );
+              const markerRow = Math.max(
+                  0,
+                  Math.min(
+                      PIXEL_GRID_SIZE - 1,
+                      Math.floor((yPosFromBrightness(marker.brightness, visualStyle) / 100) * PIXEL_GRID_SIZE)
+                  )
+              );
+              const key = `${markerRow}-${markerColumn}`;
+              const nextValue = {
+                  color: markerColor(marker),
+                  isActive: Boolean(marker.isActive),
+                  isOn: marker.isOn,
+              };
+              const currentValue = lookup[key];
+
+              if (!currentValue || nextValue.isActive || (!currentValue.isOn && nextValue.isOn)) {
+                  lookup[key] = nextValue;
+              }
+
+              return lookup;
+          }, {})
+        : null;
+
+    const pixelCells =
+        isBrickStyle
+            ? PIXEL_GRID_CELLS.map((cell) => {
+                  const xFraction = (cell.column + 0.5) / PIXEL_GRID_SIZE;
+                  const yFraction = (cell.row + 0.5) / PIXEL_GRID_SIZE;
+                  const selection = selectionFromFractions(xFraction, yFraction, mode, lockedSpectrumHue);
+                  const markerState = pixelMarkerLookup?.[`${cell.row}-${cell.column}`] ?? null;
+                  const isLit =
+                      (isOn &&
+                          (cell.row > selectedBrickRow ||
+                              (cell.row === selectedBrickRow && cell.column <= selectedBrickColumn))) ||
+                      Boolean(markerState?.isOn);
+                  const isTopLitCell = isLit && cell.row === selectedBrickRow;
+                  const hasMarker = Boolean(markerState);
+                  const isActiveMarkerCell = Boolean(markerState?.isActive);
+                  const isSelectedBrickCell = cell.row === selectedBrickRow && cell.column === selectedBrickColumn;
+                  const isPrimaryBrickCell = isActiveMarkerCell || isSelectedBrickCell;
+                  const markerGlowMultiplier = hasMarker ? (isActiveMarkerCell ? 1.15 : 0.3) : 1;
+                  const baseLitColor = buildSurfaceNodeColor(
+                      mode,
+                      { ...selection, brightness: Math.max(70, visibleSelection.brightness) },
+                      lockedSpectrumHue,
+                      visualStyle
+                  );
+                  const litColor = hasMarker ? markerState?.color ?? baseLitColor : baseLitColor;
+                  const fillOpacity = isPrimaryBrickCell ? 1 : hasMarker ? 1 : 0.3;
+                  const fillShadow = isPrimaryBrickCell
+                      ? isTopLitCell
+                          ? `inset 0 1px 0 rgba(255, 255, 255, ${hasMarker ? 0.84 : 0.72}), inset 0 -1px 0 rgba(15, 23, 42, 0.04), 0 0 ${Math.round(
+                                18 * markerGlowMultiplier
+                            )}px ${litColor}, 0 0 ${Math.round(hasMarker ? 38 * markerGlowMultiplier : 30)}px rgba(255, 255, 255, ${
+                                isActiveMarkerCell ? 0.24 : hasMarker ? 0.08 : 0.18
+                            })`
+                          : `inset 0 1px 0 rgba(255, 255, 255, ${hasMarker ? 0.66 : 0.5}), inset 0 -1px 0 rgba(15, 23, 42, 0.06), 0 0 ${Math.round(
+                                14 * markerGlowMultiplier
+                            )}px ${litColor}`
+                      : hasMarker
+                        ? `inset 0 1px 0 rgba(255, 255, 255, 0.42), inset 0 -1px 0 rgba(15, 23, 42, 0.06), 0 0 12px ${litColor}, 0 0 22px rgba(255, 255, 255, 0.12)`
+                        : 'inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -1px 0 rgba(15, 23, 42, 0.06), 0 0 4px rgba(255, 255, 255, 0.04)';
+                  return {
+                      key: cell.key,
+                      selection,
+                      color: isLit
+                          ? litColor
+                          : 'rgba(118, 126, 138, 0.22)',
+                      boxShadow: isLit
+                          ? fillShadow
+                          : 'inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 -1px 0 rgba(15, 23, 42, 0.08)',
+                      opacity: isLit ? fillOpacity : 1,
+                      isLit,
+                      isTopLitCell,
+                      hasMarker,
+                      isActiveMarkerCell,
+                  };
+              })
+            : null;
+
+    const matrixCells =
+        visualStyle === 'matrix'
+            ? MATRIX_GRID_CELLS.map((cell) => {
+                  const xFraction = (cell.column + 0.5) / MATRIX_GRID_SIZE;
+                  const yFraction = (cell.row + 0.5) / MATRIX_GRID_SIZE;
+                  const selection = selectionFromFractions(xFraction, yFraction, mode, lockedSpectrumHue);
+                  const cellXPercent = xFraction * 100;
+                  const cellYPercent = yFraction * 100;
+                  const distance = Math.hypot(
+                      cellXPercent - visibleSelection.xPercent,
+                      cellYPercent - visibleSelection.yPercent
+                  );
+                  const glowStrength = Math.max(0, 1 - distance / 24);
+                  const glowOpacityBoost = glowStrength * 0.42;
+                  const glowBlur = 8 + glowStrength * 14;
+                  const glowSpread = glowStrength * 8;
+                  return {
+                      key: cell.key,
+                      color: isOn
+                          ? buildSurfaceNodeColor(mode, selection, lockedSpectrumHue, visualStyle)
+                          : 'rgba(71, 85, 105, 0.9)',
+                      opacity: isOn ? 0.18 + selection.brightness / 140 + glowOpacityBoost : 0.44,
+                      scale: isOn ? 0.32 * (1 + glowStrength * 2) : 0.32,
+                      boxShadow:
+                          isOn && glowStrength > 0.02
+                              ? `0 0 ${glowBlur}px rgba(255, 255, 255, ${glowStrength * 0.12}), 0 0 ${glowSpread}px ${buildSurfaceNodeColor(
+                                    mode,
+                                    selection,
+                                    lockedSpectrumHue,
+                                    visualStyle
+                                )}`
+                              : undefined,
+                  };
+              })
+            : null;
 
     return (
         <div className="halo">
@@ -383,7 +545,11 @@ export function Halo({
             <div className="halo__pad-shell">
                 <div
                     ref={trackpadRef}
-                    className={classNames('halo__pad', { 'is-off': !isOn, 'is-disco': isDiscoMode })}
+                    className={classNames(
+                        'halo__pad',
+                        `is-style-${visualStyle}`,
+                        { 'is-off': !isOn, 'is-disco': isDiscoMode }
+                    )}
                     onPointerDown={handlePointerDown}
                     onPointerMove={handlePointerMove}
                     onPointerUp={handlePointerUp}
@@ -394,6 +560,61 @@ export function Halo({
                         ['--halo-active-color' as string]: indicatorColor,
                     }}
                 >
+                    {pixelCells ? (
+                        <div className="halo__pixel-surface">
+                            {pixelCells.map((cell) => (
+                                <button
+                                    key={cell.key}
+                                    type="button"
+                                    className={`halo__pixel-cell-wrap${cell.isLit ? ' is-lit' : ''}${cell.isTopLitCell ? ' is-top-lit' : ''}`}
+                                    aria-label={`Set light to row ${PIXEL_GRID_SIZE - cell.selection.yPercent / 10}, column ${Math.round(cell.selection.xPercent / 10) + 1}`}
+                                    onPointerDown={(event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        if (isDiscoMode) {
+                                            resetSpeedRuleTracking();
+                                            onDiscoModeExit?.();
+                                            return;
+                                        }
+                                        onInteractionStart?.();
+                                        lastEmittedSelectionRef.current = cell.selection;
+                                        setDragSelection(cell.selection);
+                                        triggerPulse(cell.selection);
+                                        onChange(cell.selection.hue, cell.selection.saturation, cell.selection.brightness);
+                                        onInteractionEnd?.();
+                                        setDragSelection(null);
+                                        resetSpeedRuleTracking();
+                                    }}
+                                >
+                                    <span
+                                        className="halo__pixel-cell"
+                                        style={{
+                                            background: cell.color,
+                                            boxShadow: cell.boxShadow,
+                                            opacity: cell.opacity,
+                                        }}
+                                    />
+                                </button>
+                            ))}
+                        </div>
+                    ) : null}
+                    {matrixCells ? (
+                        <div className="halo__matrix-surface" aria-hidden="true">
+                            {matrixCells.map((cell) => (
+                                <span key={cell.key} className="halo__matrix-node-wrap">
+                                    <span
+                                        className="halo__matrix-node"
+                                        style={{
+                                            background: cell.color,
+                                            opacity: cell.opacity,
+                                            transform: `scale(${cell.scale})`,
+                                            boxShadow: cell.boxShadow,
+                                        }}
+                                    />
+                                </span>
+                            ))}
+                        </div>
+                    ) : null}
                 </div>
                 <div ref={overlayRef} className="halo__overlay">
                 {isDiscoMode ? (
@@ -413,7 +634,7 @@ export function Halo({
                         </div>
                     </div>
                 ) : null}
-                {!isDiscoMode
+                {!isDiscoMode && !isBrickStyle
                     ? markers.map((marker) => (
                           marker.entityId === dragSourceMarkerId || marker.isActive ? null :
                           <button
@@ -426,8 +647,8 @@ export function Halo({
                               aria-label={`Control ${marker.entityId}`}
                               onPointerDown={(event) => handleMarkerPointerDown(marker, event)}
                                   style={{
-                                  left: `${xPosFromHueSat(marker.hue, marker.saturation, mode, lockedSpectrumHue)}%`,
-                                  top: `${100 - marker.brightness}%`,
+                                  left: `${xPosFromHueSat(marker.hue, marker.saturation, mode, lockedSpectrumHue, visualStyle)}%`,
+                                  top: `${yPosFromBrightness(marker.brightness, visualStyle)}%`,
                                   background: markerColor(marker),
                               }}
                           />
@@ -447,20 +668,23 @@ export function Halo({
                         }}
                     />
                 ) : null}
-                {ghostSelection && !isDiscoMode ? (
+                {ghostSelection && !isDiscoMode && !isBrickStyle ? (
                     <div
                         className="halo__indicator-ghost"
                         style={{
                             left: `${ghostSelection.xPercent}%`,
                             top: `${ghostSelection.yPercent}%`,
                             background:
-                                mode === 'spectrum'
-                                    ? `hsl(${lockedSpectrumHue ?? ghostSelection.hue}, 100%, 50%)`
-                                    : buildTemperatureIndicatorColor(
-                                          ghostSelection.hue,
-                                          ghostSelection.saturation,
-                                          ghostSelection.brightness
-                                      ),
+                                buildSurfaceNodeColor(
+                                    mode,
+                                    {
+                                        hue: ghostSelection.hue,
+                                        saturation: ghostSelection.saturation,
+                                        brightness: ghostSelection.brightness,
+                                    },
+                                    lockedSpectrumHue,
+                                    visualStyle
+                                ),
                             boxShadow: buildIndicatorShadow(
                                 ghostSelection.hue,
                                 ghostSelection.saturation,
@@ -470,7 +694,7 @@ export function Halo({
                         }}
                     />
                 ) : null}
-                {isOn && !isDiscoMode ? (
+                {isOn && !isDiscoMode && !isBrickStyle ? (
                     <div
                         className={classNames('halo__indicator', {
                             'is-live': !!dragSelection,
@@ -480,13 +704,16 @@ export function Halo({
                             left: `${visibleSelection.xPercent}%`,
                             top: `${visibleSelection.yPercent}%`,
                             background:
-                                mode === 'spectrum'
-                                    ? `hsl(${lockedSpectrumHue ?? visibleSelection.hue}, 100%, 50%)`
-                                    : buildTemperatureIndicatorColor(
-                                          visibleSelection.hue,
-                                          visibleSelection.saturation,
-                                          visibleSelection.brightness
-                                      ),
+                                buildSurfaceNodeColor(
+                                    mode,
+                                    {
+                                        hue: visibleSelection.hue,
+                                        saturation: visibleSelection.saturation,
+                                        brightness: visibleSelection.brightness,
+                                    },
+                                    lockedSpectrumHue,
+                                    visualStyle
+                                ),
                             boxShadow: buildIndicatorShadow(
                                 visibleSelection.hue,
                                 visibleSelection.saturation,

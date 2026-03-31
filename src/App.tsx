@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CompactCard, type CardLayout, type GroupedLightOption, type SceneOption } from './components/CompactCard';
 import { PopupCardShell } from './components/card-popup/PopupCardShell';
-import type { HaloMarker } from './components/Halo';
+import type { HaloMarker, HaloVisualStyle } from './components/Halo';
 import { callLightService, getLightState } from './services/ha-connection';
 import { usePopupSheet } from './hooks/use-popup-sheet';
 import {
@@ -38,6 +38,24 @@ export interface CardAppProps {
     onDoubleTapAction?: () => void;
 }
 
+function deriveAreaLabel(sourceName: string | undefined, fallbackEntityId: string, explicitAreaName?: string | null) {
+    const normalizedExplicitAreaName = explicitAreaName?.trim();
+    if (normalizedExplicitAreaName) {
+        return normalizedExplicitAreaName;
+    }
+
+    const normalizedSourceName = sourceName?.trim();
+    if (normalizedSourceName) {
+        const withoutGroupSuffix = normalizedSourceName.replace(/\s+(group|lights?)$/i, '').trim();
+        if (withoutGroupSuffix && withoutGroupSuffix !== normalizedSourceName) {
+            return withoutGroupSuffix;
+        }
+    }
+
+    const entitySlug = fallbackEntityId.replace(/^[^.]+\./, '').replace(/_/g, ' ').trim();
+    return entitySlug ? entitySlug.charAt(0).toUpperCase() + entitySlug.slice(1) : null;
+}
+
 export function CardApp({
     hass,
     entityId,
@@ -54,6 +72,7 @@ export function CardApp({
             state?: string;
             attributes?: {
                 friendly_name?: string;
+                area_name?: string;
                 brightness?: number;
             };
         }
@@ -119,6 +138,7 @@ export function CardApp({
     const [isOn, setIsOn] = useState(false);
     const [uiMode, setUiMode] = useState<'temperature' | 'spectrum'>('temperature');
     const [selectedColorHue, setSelectedColorHue] = useState<number | null>(null);
+    const [padVisualStyle, setPadVisualStyle] = useState<HaloVisualStyle>('plotter');
     const [selectedSceneName, setSelectedSceneName] = useState<string | null>(null);
     const [sceneFeedbackMessage, setSceneFeedbackMessage] = useState<string | null>(null);
     const [showPopup, setShowPopup] = useState(false);
@@ -227,6 +247,12 @@ export function CardApp({
         groupRelativeLayout.current = null;
         groupRelativeInteractionSnapshot.current = null;
     }, [entityId, groupedLightIds.join('|'), uiMode]);
+
+    useEffect(() => {
+        if (padVisualStyle === 'orb') {
+            setPadVisualStyle('plotter');
+        }
+    }, [padVisualStyle]);
 
     useEffect(() => {
         if (controlScope === 'group-relative' && groupedLightIds.length) {
@@ -1052,9 +1078,17 @@ export function CardApp({
         controlScope,
         controlledLightEntityId,
     });
+    const expandedAreaName = deriveAreaLabel(
+        groupedLightIds.length ? groupLight?.attributes.friendly_name : light?.attributes.friendly_name || lightName,
+        entityId,
+        ((light?.attributes as { area_name?: string } | undefined)?.area_name ??
+            (groupLight?.attributes as { area_name?: string } | undefined)?.area_name) ||
+            null
+    );
     const expandedCardProps = {
         isDarkMode,
         lightName,
+        expandedAreaName,
         expandedPrimaryName,
         expandedSecondaryName,
         icon,
@@ -1070,6 +1104,8 @@ export function CardApp({
         onControlsChange: handleControlsChange,
         selectedColorHue,
         onColorSelect: handleColorSelect,
+        padVisualStyle,
+        onPadVisualStyleChange: setPadVisualStyle,
         onControlInteractionStart: beginControlInteraction,
         onControlInteractionEnd: handleControlInteractionEnd,
         isDiscoMode,
@@ -1097,6 +1133,7 @@ export function CardApp({
                 layout={resolvedLayout}
                 isDarkMode={isDarkMode}
                 lightName={resolvedLayout === 'compact' ? compactLightName : lightName}
+                expandedAreaName={resolvedLayout === 'compact' ? null : expandedAreaName}
                 expandedPrimaryName={resolvedLayout === 'compact' ? undefined : expandedPrimaryName}
                 expandedSecondaryName={resolvedLayout === 'compact' ? null : expandedSecondaryName}
                 icon={icon}
@@ -1112,6 +1149,8 @@ export function CardApp({
                 onControlsChange={handleControlsChange}
                 selectedColorHue={selectedColorHue}
                 onColorSelect={handleColorSelect}
+                padVisualStyle={padVisualStyle}
+                onPadVisualStyleChange={setPadVisualStyle}
                 onControlInteractionStart={beginControlInteraction}
                 onControlInteractionEnd={handleControlInteractionEnd}
                 isDiscoMode={isDiscoMode}

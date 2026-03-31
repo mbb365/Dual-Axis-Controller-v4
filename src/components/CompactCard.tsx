@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import compactCardStyles from './CompactCard.css?inline';
-import type { HaloMarker } from './Halo';
+import type { HaloMarker, HaloVisualStyle } from './Halo';
 import { CompactView } from './compact-card/CompactView';
 import {
     buildCompactBackground,
@@ -39,6 +39,7 @@ interface CompactCardProps {
     layout: CardLayout;
     isDarkMode?: boolean;
     lightName: string;
+    expandedAreaName?: string | null;
     expandedPrimaryName?: string;
     expandedSecondaryName?: string | null;
     icon: string;
@@ -54,6 +55,8 @@ interface CompactCardProps {
     onControlsChange: (h: number, s: number, b: number) => void;
     selectedColorHue?: number | null;
     onColorSelect?: (hue: number) => void;
+    padVisualStyle?: HaloVisualStyle;
+    onPadVisualStyleChange?: (style: HaloVisualStyle) => void;
     onControlInteractionStart?: () => void;
     onControlInteractionEnd?: () => void;
     isDiscoMode?: boolean;
@@ -82,6 +85,7 @@ export function CompactCard({
     layout,
     isDarkMode = false,
     lightName,
+    expandedAreaName,
     expandedPrimaryName,
     expandedSecondaryName,
     icon: _icon,
@@ -97,6 +101,8 @@ export function CompactCard({
     onControlsChange,
     selectedColorHue,
     onColorSelect,
+    padVisualStyle = 'plotter',
+    onPadVisualStyleChange,
     onControlInteractionStart,
     onControlInteractionEnd,
     isDiscoMode,
@@ -140,6 +146,8 @@ export function CompactCard({
         buildGroupedCompactBackground(groupedLights, isDarkMode) ??
         buildCompactBackground(isOn, hue, saturation, brightness, uiMode, isDarkMode);
     const displayExpandedPrimaryName = expandedPrimaryName ?? lightName;
+    const displayExpandedAreaName =
+        expandedAreaName && expandedAreaName !== displayExpandedPrimaryName ? expandedAreaName : null;
     const displayExpandedSecondaryName =
         expandedSecondaryName && expandedSecondaryName !== displayExpandedPrimaryName ? expandedSecondaryName : null;
     const getGroupedLightToggleStyle = (groupedLight: GroupedLightOption) => ({
@@ -253,6 +261,7 @@ export function CompactCard({
             <style>{compactCardStyles}</style>
             <ExpandedCard
                 isDarkMode={isDarkMode}
+                displayExpandedAreaName={displayExpandedAreaName}
                 displayExpandedPrimaryName={displayExpandedPrimaryName}
                 displayExpandedSecondaryName={displayExpandedSecondaryName}
                 leadingValue={leadingValue}
@@ -268,6 +277,8 @@ export function CompactCard({
                 onControlsChange={onControlsChange}
                 selectedColorHue={selectedColorHue}
                 onColorSelect={onColorSelect}
+                padVisualStyle={padVisualStyle}
+                onPadVisualStyleChange={onPadVisualStyleChange}
                 onControlInteractionStart={onControlInteractionStart}
                 onControlInteractionEnd={onControlInteractionEnd}
                 isDiscoMode={isDiscoMode}
