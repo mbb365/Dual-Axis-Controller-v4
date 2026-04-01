@@ -11,7 +11,7 @@ interface ActionConfig {
 
 interface DualControllerConfig {
     type: string;
-    entity: string;
+    entity?: string;
     name?: string;
     icon?: string;
     layout?: CardLayout | 'auto';
@@ -26,15 +26,11 @@ class DualControllerCard extends HTMLElement {
     private _config: DualControllerConfig | null = null;
 
     public setConfig(config: DualControllerConfig) {
-        if (!config.entity) {
-            throw new Error('Dual Axis Controller: please define an "entity" in the card config.');
-        }
-
-        if (config.layout && config.layout !== 'auto') {
-            throw new Error('Dual Axis Controller: layout must be "auto".');
-        }
-
-        this._config = config;
+        this._config = {
+            ...config,
+            entity: config.entity ?? '',
+            layout: 'auto',
+        };
         this._render();
     }
 
@@ -125,7 +121,7 @@ class DualControllerCard extends HTMLElement {
         this._root.render(
             <CardApp
                 hass={this._hass}
-                entityId={this._config.entity}
+                entityId={this._config.entity ?? ''}
                 icon={this._config.icon}
                 name={this._config.name}
                 layout={this._config.layout ?? 'auto'}

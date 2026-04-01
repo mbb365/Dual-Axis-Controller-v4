@@ -1125,10 +1125,62 @@
     .dual-card--expanded {
         flex: 1;
         min-height: 0;
+        --dual-card-section-gap: 8px;
+    }
+
+    .dual-card__expanded-title-row {
+        gap: 10px;
+    }
+
+    .dual-card__expanded-title {
+        font-size: 1.08rem;
+    }
+
+    .dual-card__expanded-title--secondary {
+        max-width: 42%;
+        font-size: 1.08rem;
+    }
+
+    .dual-card__expanded-header {
+        margin-top: -2px;
+    }
+
+    .dual-card__meta-value {
+        font-size: 1.04rem;
+    }
+
+    .dual-card__pad-block {
+        margin-top: 8px;
+        margin-bottom: 8px;
+    }
+
+    .dual-card__pad-block--borderless {
+        margin-top: 8px;
+    }
+
+    .dual-card__mode-row,
+    .dual-card__utility-row,
+    .dual-card__scope-row {
+        gap: 4px;
+    }
+
+    .dual-card__mode-pill,
+    .dual-card__color-trigger,
+    .dual-card__scope-pill {
+        min-height: 40px;
+        font-size: 0.84rem;
+    }
+
+    .dual-card__power-pill,
+    .dual-card__pad-style-button {
+        width: 40px;
+        height: 40px;
     }
 
     .dual-card__group-section {
         position: relative;
+        padding-top: 4px;
+        gap: 8px;
     }
 
     .dual-card__group-mobile-trigger {
@@ -1139,9 +1191,9 @@
         justify-content: space-between;
         gap: 10px;
         width: 100%;
-        min-height: 42px;
+        min-height: 40px;
         margin-top: 0;
-        padding: 0 16px;
+        padding: 0 14px;
         border-radius: 0;
         border: 0;
         background: var(--dual-card-surface);
@@ -1170,13 +1222,13 @@
         position: absolute;
         left: 0;
         right: 0;
-        bottom: calc(100% + 12px);
+        bottom: calc(100% + 8px);
         z-index: 3;
         max-height: min(42vh, 320px);
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 8px;
+        gap: 6px;
         align-content: start;
-        padding: 10px;
+        padding: 8px;
         margin: 0;
         overflow-y: auto;
         overscroll-behavior: contain;
@@ -1188,23 +1240,23 @@
     }
 
     .dual-card__group-item {
-        min-height: 42px;
-        gap: 8px;
+        min-height: 40px;
+        gap: 6px;
         padding: 4px;
         border-radius: 22px;
     }
 
     .dual-card__group-toggle {
-        width: 30px;
-        height: 30px;
+        width: 26px;
+        height: 26px;
     }
 
     .dual-card__group-toggle-icon {
-        --mdc-icon-size: 16px;
+        --mdc-icon-size: 14px;
     }
 
     .dual-card__group-main {
-        min-height: 32px;
+        min-height: 30px;
     }
 
     .dual-card__group-meta {

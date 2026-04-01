@@ -50,14 +50,12 @@ export function PopupCardShell({
                         ? `calc(100dvh - ${mobilePopupTopInset})`
                         : 'calc(100dvh - max(24px, min(48px, 8vw)))',
                     background:
-                        'linear-gradient(180deg, color-mix(in srgb, var(--ha-card-background, var(--card-background-color, #ffffff)) 82%, white 18%) 0%, color-mix(in srgb, var(--ha-card-background, var(--card-background-color, #ffffff)) 76%, transparent 24%) 100%)',
+                        'color-mix(in srgb, var(--ha-card-background, var(--card-background-color, #ffffff)) 82%, white 18%)',
                     borderRadius: isMobilePopupViewport ? '24px 24px 0 0' : '24px',
                     boxShadow:
                         '0 24px 64px rgba(15, 23, 42, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 0 0 1px rgba(255, 255, 255, 0.018)',
                     border: '1px solid color-mix(in srgb, var(--divider-color, rgba(0, 0, 0, 0.08)) 10%, transparent 90%)',
-                    borderBottom: isMobilePopupViewport
-                        ? '0'
-                        : '1px solid color-mix(in srgb, var(--divider-color, rgba(0, 0, 0, 0.08)) 10%, transparent 90%)',
+                    borderBottom: '0',
                     padding: isMobilePopupViewport ? '12px 12px 0' : '14px',
                     boxSizing: 'border-box',
                     display: 'flex',
