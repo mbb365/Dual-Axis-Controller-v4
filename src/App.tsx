@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CompactCard, type CardLayout, type GroupedLightOption, type SceneOption } from './components/CompactCard';
+import { CompactCard, type CardLayout, type GroupedLightOption } from './components/CompactCard';
 import { PopupCardShell } from './components/card-popup/PopupCardShell';
 import type { HaloMarker, HaloVisualStyle } from './components/Halo';
 import { callLightService, getLightState } from './services/ha-connection';
@@ -66,17 +66,6 @@ export function CardApp({
     onHoldAction,
     onDoubleTapAction,
 }: CardAppProps) {
-    const allStates = (hass?.states ?? {}) as Record<
-        string,
-        {
-            state?: string;
-            attributes?: {
-                friendly_name?: string;
-                area_name?: string;
-                brightness?: number;
-            };
-        }
-    >;
     const groupLight = getLightState(hass, entityId);
     const groupedLightIds = getGroupedLightIds(groupLight);
     const [controlScope, setControlScope] = useState<ControlScope>('group');
@@ -108,13 +97,6 @@ export function CardApp({
     const supportsSpectrum =
         supportedColorModes.some((mode) => ['hs', 'xy', 'rgb', 'rgbw', 'rgbww'].includes(mode)) ||
         (light?.attributes.hs_color != null && light?.attributes.color_mode !== 'color_temp');
-    const sceneOptions: SceneOption[] = Object.entries(allStates)
-        .filter(([sceneEntityId, sceneState]) => sceneEntityId.startsWith('scene.') && sceneState?.state !== 'unavailable')
-        .map(([sceneEntityId, sceneState]) => ({
-            entityId: sceneEntityId,
-            name: sceneState.attributes?.friendly_name || sceneEntityId.replace(/^scene\./, '').replace(/_/g, ' '),
-        }))
-        .sort((left, right) => left.name.localeCompare(right.name));
     const lastCommandTime = useRef(0);
     const isUserInteracting = useRef(false);
     const interactionTimeout = useRef<number | null>(null);
@@ -124,7 +106,6 @@ export function CardApp({
     const discoBatchInFlight = useRef(false);
     const discoStepRef = useRef(0);
     const hassRef = useRef(hass);
-    const sceneFeedbackTimeout = useRef<number | null>(null);
     const pendingControlCommand = useRef<QueuedControlCommand[] | null>(null);
     const lastSentControlCommand = useRef<QueuedControlCommand[] | null>(null);
     const groupRelativeLayout = useRef<GroupRelativeSnapshot | null>(null);
@@ -139,8 +120,6 @@ export function CardApp({
     const [uiMode, setUiMode] = useState<'temperature' | 'spectrum'>('temperature');
     const [selectedColorHue, setSelectedColorHue] = useState<number | null>(null);
     const [padVisualStyle, setPadVisualStyle] = useState<HaloVisualStyle>('plotter');
-    const [selectedSceneName, setSelectedSceneName] = useState<string | null>(null);
-    const [sceneFeedbackMessage, setSceneFeedbackMessage] = useState<string | null>(null);
     const [showPopup, setShowPopup] = useState(false);
     const [isDiscoMode, setIsDiscoMode] = useState(false);
 
@@ -219,9 +198,6 @@ export function CardApp({
             }
             controlBatchInFlight.current = false;
             discoBatchInFlight.current = false;
-            if (sceneFeedbackTimeout.current) {
-                window.clearTimeout(sceneFeedbackTimeout.current);
-            }
         };
     }, []);
 
@@ -247,12 +223,6 @@ export function CardApp({
         groupRelativeLayout.current = null;
         groupRelativeInteractionSnapshot.current = null;
     }, [entityId, groupedLightIds.join('|'), uiMode]);
-
-    useEffect(() => {
-        if (padVisualStyle === 'orb') {
-            setPadVisualStyle('plotter');
-        }
-    }, [padVisualStyle]);
 
     useEffect(() => {
         if (controlScope === 'group-relative' && groupedLightIds.length) {
@@ -425,8 +395,6 @@ export function CardApp({
         }
         controlBatchInFlight.current = false;
         groupRelativeInteractionSnapshot.current = null;
-        setSelectedSceneName(null);
-        setSceneFeedbackMessage(null);
         setUiMode('spectrum');
         setKelvin(null);
         setHue(0);
@@ -645,8 +613,6 @@ export function CardApp({
         (nextHue: number, nextSaturation: number, nextBrightness: number) => {
             stopDiscoMode();
             beginControlInteraction();
-
-            setSelectedSceneName(null);
             setHue(nextHue);
             setSaturation(nextSaturation);
             setBrightness(nextBrightness);
@@ -721,7 +687,6 @@ export function CardApp({
         (nextHue: number, nextSaturation: number, nextBrightness: number) => {
             stopDiscoMode();
             beginControlInteraction();
-            setSelectedSceneName(null);
             setIsOn(nextBrightness > 0);
             setHue(nextHue);
             setSaturation(nextSaturation);
@@ -784,7 +749,6 @@ export function CardApp({
     const handleToggle = useCallback(() => {
         stopDiscoMode();
         const nextState = !isOn;
-        setSelectedSceneName(null);
         setIsOn(nextState);
         markInteraction(1000);
         groupRelativeLayout.current = null;
@@ -801,7 +765,6 @@ export function CardApp({
 
         stopDiscoMode();
         const nextState = groupLight.state !== 'on';
-        setSelectedSceneName(null);
         setIsOn(nextState);
         markInteraction(1000);
         groupRelativeLayout.current = null;
@@ -817,7 +780,6 @@ export function CardApp({
             stopDiscoMode();
             clearInteractionLock();
             hasExplicitModeSelection.current = true;
-            setSelectedSceneName(null);
             setSelectedColorHue(null);
             setUiMode(mode);
             groupRelativeLayout.current = null;
@@ -831,7 +793,6 @@ export function CardApp({
             stopDiscoMode();
             beginControlInteraction();
             hasExplicitModeSelection.current = true;
-            setSelectedSceneName(null);
             setSelectedColorHue(nextHue);
             setUiMode('spectrum');
             const currentX =
@@ -934,47 +895,6 @@ export function CardApp({
         ]
     );
 
-    const handleSceneSelect = useCallback(
-        async (sceneEntityId: string) => {
-            stopDiscoMode();
-            clearInteractionLock();
-            groupRelativeLayout.current = null;
-            groupRelativeInteractionSnapshot.current = null;
-            const selectedScene = sceneOptions.find((scene) => scene.entityId === sceneEntityId);
-            setSceneFeedbackMessage(null);
-
-            if (sceneFeedbackTimeout.current) {
-                window.clearTimeout(sceneFeedbackTimeout.current);
-                sceneFeedbackTimeout.current = null;
-            }
-
-            console.info('[Dual Halo Controller] Applying scene', {
-                lightEntityId: entityId,
-                sceneEntityId,
-                sceneName: selectedScene?.name ?? null,
-            });
-
-            try {
-                await hass.callService('scene', 'turn_on', { entity_id: sceneEntityId });
-                setSelectedSceneName(selectedScene?.name ?? null);
-            } catch (error) {
-                const detail = error instanceof Error ? error.message : 'Home Assistant did not accept the scene.';
-                console.error('[Dual Halo Controller] Failed to apply scene', {
-                    lightEntityId: entityId,
-                    sceneEntityId,
-                    error,
-                });
-
-                setSceneFeedbackMessage(`Couldn't apply ${selectedScene?.name ?? 'scene'}. ${detail}`);
-                sceneFeedbackTimeout.current = window.setTimeout(() => {
-                    setSceneFeedbackMessage(null);
-                    sceneFeedbackTimeout.current = null;
-                }, 5000);
-            }
-        },
-        [clearInteractionLock, entityId, hass, sceneOptions, stopDiscoMode]
-    );
-
     const handleTap = useCallback(() => {
         if (onTapAction) {
             onTapAction();
@@ -999,7 +919,6 @@ export function CardApp({
             if (!targetLight) return;
 
             stopDiscoMode();
-            setSelectedSceneName(null);
             groupRelativeLayout.current = null;
             groupRelativeInteractionSnapshot.current = null;
 
@@ -1114,9 +1033,6 @@ export function CardApp({
         onPadMarkerSelect: groupedLights.length ? handleGroupedLightSelect : undefined,
         onPadDoubleSelect: handlePadDoubleSelect,
         onToggle: handleToggle,
-        sceneOptions,
-        selectedSceneName,
-        sceneFeedbackMessage,
         groupedLights,
         groupedLightMarkers,
         controlScope,
@@ -1124,7 +1040,6 @@ export function CardApp({
         onControlScopeChange: handleControlScopeChange,
         onGroupedLightSelect: handleGroupedLightSelect,
         onGroupedLightToggle: handleGroupedLightToggle,
-        onSceneSelect: handleSceneSelect,
     } as const;
 
     return (
@@ -1157,11 +1072,8 @@ export function CardApp({
                 onDiscoModeTrigger={startDiscoMode}
                 onDiscoModeExit={stopDiscoMode}
                 onPadMarkerSelect={groupedLights.length ? handleGroupedLightSelect : undefined}
-                            onPadDoubleSelect={handlePadDoubleSelect}
+                onPadDoubleSelect={handlePadDoubleSelect}
                 onToggle={resolvedLayout === 'compact' ? handleCompactToggle : handleToggle}
-                sceneOptions={sceneOptions}
-                selectedSceneName={selectedSceneName}
-                sceneFeedbackMessage={sceneFeedbackMessage}
                 groupedLights={groupedLights}
                 groupedLightMarkers={groupedLightMarkers}
                 controlScope={controlScope}
@@ -1169,7 +1081,6 @@ export function CardApp({
                 onControlScopeChange={handleControlScopeChange}
                 onGroupedLightSelect={handleGroupedLightSelect}
                 onGroupedLightToggle={handleGroupedLightToggle}
-                onSceneSelect={handleSceneSelect}
                 onTapAction={handleTap}
                 onHoldAction={onHoldAction}
                 onDoubleTapAction={onDoubleTapAction}

@@ -78,14 +78,6 @@ export const HALO_CSS = `
     background: transparent;
 }
 
-.halo__pad.is-style-orb::before {
-    background-image:
-        radial-gradient(circle at center, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.16) 24%, rgba(15, 23, 42, 0.14) 46%, rgba(255, 255, 255, 0) 56%);
-    background-size: 12.5% 12.5%;
-    background-position: center center;
-    opacity: 0.95;
-}
-
 .halo__pad.is-style-matrix::before {
     content: none;
 }

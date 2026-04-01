@@ -14,11 +14,6 @@ import { ExpandedCard } from './compact-card/ExpandedCard';
 
 export type CardLayout = 'compact' | 'expanded';
 
-export interface SceneOption {
-    entityId: string;
-    name: string;
-}
-
 export interface ColorOption {
     hue: number;
     label: string;
@@ -65,9 +60,6 @@ interface CompactCardProps {
     onPadMarkerSelect?: (entityId: string) => void;
     onPadDoubleSelect?: (h: number, s: number, b: number) => void;
     onToggle: () => void;
-    sceneOptions?: SceneOption[];
-    selectedSceneName?: string | null;
-    sceneFeedbackMessage?: string | null;
     groupedLights?: GroupedLightOption[];
     groupedLightMarkers?: HaloMarker[];
     controlScope?: 'group' | 'group-relative' | 'individual';
@@ -75,7 +67,6 @@ interface CompactCardProps {
     onControlScopeChange?: (scope: 'group' | 'group-relative') => void;
     onGroupedLightSelect?: (entityId: string) => void;
     onGroupedLightToggle?: (entityId: string) => void;
-    onSceneSelect?: (sceneEntityId: string) => void;
     onTapAction?: () => void;
     onHoldAction?: () => void;
     onDoubleTapAction?: () => void;

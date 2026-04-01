@@ -12,13 +12,12 @@ export interface HaloSelection {
 }
 
 export type HaloMode = 'temperature' | 'spectrum';
-export type HaloVisualStyle = 'pixel' | 'orb' | 'matrix' | 'plotter';
+export type HaloVisualStyle = 'pixel' | 'matrix' | 'plotter';
 
 const STYLE_RESOLUTION: Record<HaloVisualStyle, { x: number; y: number }> = {
     pixel: { x: 10, y: 10 },
-    orb: { x: 8, y: 8 },
     matrix: { x: 32, y: 32 },
-    plotter: { x: 24, y: 24 },
+    plotter: { x: 1, y: 1 },
 };
 
 function clamp01(value: number) {
@@ -41,7 +40,7 @@ function quantizeFractionForStyle(value: number, style: HaloVisualStyle, axis: '
     if (style === 'pixel') {
         return quantizeFractionToCellCenter(value, STYLE_RESOLUTION[style][axis]);
     }
-    if (style === 'matrix' || style === 'orb') {
+    if (style === 'matrix') {
         return quantizeFraction(value, STYLE_RESOLUTION[style][axis]);
     }
     return clamp01(value);
@@ -224,16 +223,10 @@ export function buildPadBackground(
     if (mode === 'spectrum') {
         if (lockedSpectrumHue != null) {
             const lockedColor = buildLockedSpectrumColor(lockedSpectrumHue);
-            if (visualStyle === 'orb') {
-                return `radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0) 42%), linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, rgba(248, 250, 252, 0.82) 100%), linear-gradient(90deg, rgba(255, 255, 255, 1) 0%, ${lockedColor} 100%)`;
-            }
             if (visualStyle === 'matrix') {
                 return 'transparent';
             }
             return `radial-gradient(circle at 14% 18%, rgba(255, 255, 255, 0.26) 0%, rgba(255, 255, 255, 0.1) 14%, rgba(255, 255, 255, 0) 34%), linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.14) 62%, rgba(250, 251, 253, 0.84) 100%), linear-gradient(90deg, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0.94) 18%, ${lockedColor} 100%)`;
-        }
-        if (visualStyle === 'orb') {
-            return 'radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0) 40%), linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, rgba(248, 250, 252, 0.82) 100%), linear-gradient(90deg, rgba(255, 96, 96, 1) 0%, rgba(255, 210, 94, 0.92) 18%, rgba(128, 232, 106, 0.92) 36%, rgba(72, 221, 244, 0.9) 54%, rgba(110, 115, 255, 0.9) 74%, rgba(255, 98, 198, 0.96) 100%)';
         }
         if (visualStyle === 'matrix') {
             return 'transparent';
@@ -241,9 +234,6 @@ export function buildPadBackground(
         return 'radial-gradient(circle at 14% 18%, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.08) 14%, rgba(255, 255, 255, 0) 34%), linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.14) 62%, rgba(250, 251, 253, 0.84) 100%), linear-gradient(90deg, rgba(255, 96, 96, 1) 0%, rgba(255, 210, 94, 0.92) 18%, rgba(128, 232, 106, 0.92) 36%, rgba(72, 221, 244, 0.9) 54%, rgba(110, 115, 255, 0.9) 74%, rgba(255, 98, 198, 0.96) 100%)';
     }
 
-    if (visualStyle === 'orb') {
-        return 'radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0) 42%), linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(250, 251, 253, 0.82) 100%), linear-gradient(90deg, rgba(174, 231, 255, 0.98) 0%, rgba(255, 255, 255, 0.94) 30%, rgba(255, 181, 61, 1) 100%)';
-    }
     if (visualStyle === 'matrix') {
         return 'transparent';
     }
