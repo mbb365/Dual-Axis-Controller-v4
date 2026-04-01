@@ -384,17 +384,15 @@ function GroupedLightsSection({
 
     return (
         <div className="dual-card__group-section">
-            <div className="dual-card__scope-row" role="radiogroup" aria-label="Control scope">
+            <div className="dual-card__scope-row" role="group" aria-label="Control scope">
                 <button
                     type="button"
                     className={`dual-card__scope-pill dual-card__scope-pill--group ${
                         controlScope === 'group' ? 'is-active' : ''
                     }`}
-                    role="radio"
-                    aria-checked={controlScope === 'group'}
+                    aria-pressed={controlScope === 'group'}
                     onClick={() => onControlScopeChange?.('group')}
                 >
-                    <span className="dual-card__scope-indicator" aria-hidden="true" />
                     <span className="dual-card__scope-label">Group</span>
                 </button>
                 <button
@@ -402,11 +400,9 @@ function GroupedLightsSection({
                     className={`dual-card__scope-pill dual-card__scope-pill--group-relative ${
                         controlScope === 'group-relative' ? 'is-active' : ''
                     }`}
-                    role="radio"
-                    aria-checked={controlScope === 'group-relative'}
+                    aria-pressed={controlScope === 'group-relative'}
                     onClick={() => onControlScopeChange?.('group-relative')}
                 >
-                    <span className="dual-card__scope-indicator" aria-hidden="true" />
                     <span className="dual-card__scope-label">Group Relative</span>
                 </button>
             </div>

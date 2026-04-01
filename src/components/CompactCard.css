@@ -239,7 +239,6 @@
 .dual-card__power-pill,
 .dual-card__color-trigger,
 .dual-card__scene-trigger,
-.dual-card__scope-pill,
 .dual-card__group-item,
 .dual-card__scene-option {
     appearance: none;
@@ -256,7 +255,6 @@
 .dual-card__power-pill,
 .dual-card__color-trigger,
 .dual-card__scene-trigger,
-.dual-card__scope-pill,
 .dual-card__group-item,
 .dual-card__group-toggle,
 .dual-card__group-mobile-trigger,
@@ -269,7 +267,7 @@
     z-index: 1;
     isolation: isolate;
     min-height: 44px;
-    border-radius: 10px;
+    border-radius: 14px;
     border: 0;
     background: var(--dual-card-control-idle);
     color: var(--dual-card-text);
@@ -286,7 +284,7 @@
 .dual-card__mode-pill--temperature::after {
     content: '';
     position: absolute;
-    inset: 1.5px;
+    inset: 0;
     border-radius: inherit;
     padding: 1.5px;
     pointer-events: none;
@@ -324,6 +322,7 @@
 
 .dual-card__mode-pill.is-active {
     background: var(--dual-card-surface-soft);
+    color: var(--dual-card-text);
 }
 
 .dual-card__mode-pill--spectrum.is-active {
@@ -363,7 +362,7 @@
     isolation: isolate;
     width: 44px;
     height: 44px;
-    border-radius: 10px;
+    border-radius: 14px;
     border: 0;
     background: var(--dual-card-control-idle);
     color: var(--dual-card-text);
@@ -421,7 +420,7 @@
     isolation: isolate;
     width: 100%;
     min-height: 44px;
-    border-radius: 10px;
+    border-radius: 14px;
     border: 0;
     background: var(--dual-card-control-idle);
     color: var(--dual-card-text);
@@ -537,7 +536,7 @@
     -webkit-appearance: none;
     width: 44px;
     height: 44px;
-    border-radius: 10px;
+    border-radius: 14px;
     border: 0;
     background: var(--dual-card-control-idle);
     padding: 0;
@@ -774,61 +773,69 @@
 }
 
 .dual-card__scope-row {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: center;
-    gap: 14px;
-}
-
-.dual-card__scope-pill + .dual-card__scope-pill {
-    margin-left: 14px;
+    gap: 6px;
 }
 
 .dual-card__scope-pill {
     appearance: none;
     -webkit-appearance: none;
-    min-height: auto;
+    position: relative;
+    z-index: 1;
+    isolation: isolate;
+    min-height: 44px;
+    height: 44px;
     border: 0;
-    border-radius: 0;
-    padding: 0;
-    background: transparent;
-    color: #545454;
+    border-radius: 14px;
+    padding: 0 16px;
+    background: var(--dual-card-control-idle);
+    color: var(--dual-card-text);
     font: inherit;
-    font-size: 0.88rem;
+    font-size: 0.9rem;
     font-weight: 550;
-    display: inline-flex;
+    letter-spacing: -0.01em;
+    display: flex;
     align-items: center;
-    justify-content: flex-start;
-    gap: 9px;
-    text-align: left;
+    justify-content: center;
+    text-align: center;
     cursor: pointer;
-    transition: color 0.18s ease;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease, background 0.18s ease, color 0.18s ease;
 }
 
-.dual-card__scope-pill--group-relative {
-    margin-left: 14px;
+.dual-card__scope-pill::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1.5px;
+    pointer-events: none;
+    -webkit-mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+    mask-composite: exclude;
 }
 
-.dual-card__scope-indicator {
-    width: 14px;
-    height: 14px;
-    border-radius: 999px;
-    flex-shrink: 0;
-    background: transparent;
-    box-shadow: inset 0 0 0 1.5px rgba(84, 84, 84, 0.44);
-    transition: background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+.dual-card__scope-pill--group::after {
+    background: linear-gradient(90deg, rgba(84, 84, 84, 0.34) 0%, rgba(84, 84, 84, 0.18) 100%);
 }
 
-.dual-card__scope-pill.is-active .dual-card__scope-indicator {
-    background: radial-gradient(circle, currentColor 0 42%, transparent 48%);
-    box-shadow: inset 0 0 0 1.5px currentColor;
+.dual-card__scope-pill--group-relative::after {
+    background: linear-gradient(90deg, rgba(84, 84, 84, 0.34) 0%, rgba(84, 84, 84, 0.18) 100%);
 }
 
 .dual-card__scope-pill.is-active {
+    background: var(--dual-card-surface-soft);
     color: var(--dual-card-text);
-    background: transparent;
 }
 
-.dual-card__scope-pill:not(.is-active):hover {
+.dual-card__scope-pill:hover {
+    background: var(--dual-card-control-hover);
     color: var(--dual-card-text);
 }
 
@@ -837,12 +844,16 @@
     outline-offset: 2px;
 }
 
+.dual-card__scope-label {
+    white-space: nowrap;
+}
+
 .dual-card__scope-pill--group.is-active {
-    background: transparent;
+    background: rgba(84, 84, 84, 0.08);
 }
 
 .dual-card__scope-pill--group-relative.is-active {
-    background: transparent;
+    background: rgba(84, 84, 84, 0.08);
 }
 
 .dual-card__group-mobile-trigger {
@@ -1176,7 +1187,8 @@
     .dual-card__color-trigger,
     .dual-card__scope-pill {
         min-height: 40px;
-        font-size: 0.84rem;
+        height: 40px;
+        font-size: 0.9rem;
     }
 
     .dual-card__power-pill,
@@ -1365,7 +1377,7 @@
     .dual-card--theme-dark .dual-card__scope-pill,
     .dual-card--theme-dark .dual-card__group-item,
     .dual-card--theme-dark .dual-card__scene-option {
-        background: #262626;
+        background: rgba(255, 255, 255, 0.035);
         color: rgba(226, 232, 240, 0.92);
     }
 
@@ -1375,7 +1387,7 @@
     .dual-card--theme-dark .dual-card__pad-style-button.is-active,
     .dual-card--theme-dark .dual-card__scope-pill.is-active,
     .dual-card--theme-dark .dual-card__group-item.is-active {
-        background: #303030;
+        background: rgba(255, 255, 255, 0.08);
         color: rgba(241, 245, 249, 0.98);
     }
 
@@ -1383,44 +1395,44 @@
         background:
             linear-gradient(
                 90deg,
-                rgba(255, 173, 96, 0.18) 0%,
-                rgba(255, 228, 124, 0.12) 22%,
-                rgba(136, 223, 139, 0.1) 48%,
-                rgba(122, 193, 255, 0.12) 74%,
-                rgba(188, 156, 255, 0.14) 100%
+                rgba(255, 173, 96, 0.34) 0%,
+                rgba(255, 228, 124, 0.24) 22%,
+                rgba(136, 223, 139, 0.2) 48%,
+                rgba(122, 193, 255, 0.24) 74%,
+                rgba(188, 156, 255, 0.28) 100%
             ),
-            #303030;
+            rgba(255, 255, 255, 0.08);
     }
 
     .dual-card--theme-dark .dual-card__mode-pill--temperature.is-active {
         background:
             linear-gradient(
                 90deg,
-                rgba(174, 231, 255, 0.18) 0%,
-                rgba(255, 255, 255, 0.08) 30%,
-                rgba(255, 181, 61, 0.18) 100%
+                rgba(174, 231, 255, 0.34) 0%,
+                rgba(255, 255, 255, 0.18) 30%,
+                rgba(255, 181, 61, 0.34) 100%
             ),
-            #303030;
+            rgba(255, 255, 255, 0.08);
     }
 
     .dual-card--theme-dark .dual-card__power-pill.is-active {
         background:
-            radial-gradient(circle at 50% 42%, rgba(255, 212, 141, 0.2) 0%, rgba(255, 187, 103, 0.11) 58%, rgba(255, 255, 255, 0) 100%),
-            #303030;
+            radial-gradient(circle at 50% 42%, rgba(255, 212, 141, 0.34) 0%, rgba(255, 187, 103, 0.2) 58%, rgba(255, 255, 255, 0) 100%),
+            rgba(255, 255, 255, 0.08);
     }
 
     .dual-card--theme-dark .dual-card__color-picker.is-armed .dual-card__color-trigger {
-        background: #303030;
+        background: rgba(255, 255, 255, 0.08);
     }
 
     .dual-card--theme-dark .dual-card__color-trigger.is-active {
         background:
             linear-gradient(
                 90deg,
-                hsl(var(--dual-card-selected-hue) 48% 24% / 0.96) 0%,
-                hsl(var(--dual-card-selected-hue) 78% 58% / 0.18) 100%
+                hsl(var(--dual-card-selected-hue) 56% 26% / 0.98) 0%,
+                hsl(var(--dual-card-selected-hue) 88% 62% / 0.34) 100%
             ),
-            #303030;
+            rgba(255, 255, 255, 0.08);
     }
 
     .dual-card--theme-dark .dual-card__color-picker:not(.is-armed) .dual-card__color-inline-swatch {
@@ -1437,20 +1449,12 @@
         box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.58);
     }
 
-    .dual-card--theme-dark .dual-card__scope-pill--group.is-active {
-        background: transparent;
+    .dual-card--theme-dark .dual-card__scope-pill--group::after {
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.08) 100%);
     }
 
-    .dual-card--theme-dark .dual-card__scope-indicator {
-        box-shadow: inset 0 0 0 1.5px rgba(226, 232, 240, 0.42);
-    }
-
-    .dual-card--theme-dark .dual-card__scope-pill.is-active .dual-card__scope-indicator {
-        box-shadow: inset 0 0 0 1.5px rgba(241, 245, 249, 0.96);
-    }
-
-    .dual-card--theme-dark .dual-card__scope-pill--group-relative.is-active {
-        background: transparent;
+    .dual-card--theme-dark .dual-card__scope-pill--group-relative::after {
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.08) 100%);
     }
 
     .dual-card--theme-dark .dual-card__mode-pill:not(:disabled):hover,
@@ -1458,8 +1462,13 @@
     .dual-card--theme-dark .dual-card__color-trigger:hover,
     .dual-card--theme-dark .dual-card__pad-style-button:hover,
     .dual-card--theme-dark .dual-card__scene-trigger:not(:disabled):hover,
-    .dual-card--theme-dark .dual-card__group-item:hover {
+    .dual-card--theme-dark .dual-card__group-item:hover,
+    .dual-card--theme-dark .dual-card__scope-pill:not(.is-active):hover {
         background: #2c2c2c;
+    }
+
+    .dual-card--theme-dark .dual-card__scope-pill:hover {
+        box-shadow: none;
     }
 
     .dual-card--theme-dark .dual-card__scene-option:hover {}

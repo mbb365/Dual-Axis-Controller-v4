@@ -9,9 +9,9 @@ export const HALO_CSS = `
     aspect-ratio: 1 / 1;
     box-sizing: border-box;
     overflow: visible;
-    --halo-pad-inset: 2px;
-    --halo-pad-border-width: 6px;
-    --halo-overlay-inset: calc(var(--halo-pad-inset) + var(--halo-pad-border-width));
+    --halo-pad-inset: 0px;
+    --halo-pad-border-width: 0px;
+    --halo-overlay-inset: 0px;
 }
 
 .halo__pad-shell.is-borderless-style {
@@ -28,7 +28,7 @@ export const HALO_CSS = `
     background-color: rgba(245, 247, 250, 0.96);
     cursor: crosshair;
     touch-action: none;
-    border: var(--halo-pad-border-width) solid rgba(183, 192, 203, 0.9);
+    border: 0;
     box-shadow: none;
     transition:
         border-radius 340ms cubic-bezier(0.22, 0.68, 0.2, 1),
@@ -451,9 +451,9 @@ export const HALO_CSS = `
 
 @container (max-width: 420px) {
     .halo__pad-shell {
-        --halo-pad-inset: 2px;
-        --halo-pad-border-width: 6px;
-        --halo-overlay-inset: calc(var(--halo-pad-inset) + var(--halo-pad-border-width));
+        --halo-pad-inset: 0px;
+        --halo-pad-border-width: 0px;
+        --halo-overlay-inset: 0px;
     }
 
     .halo__pad-shell.is-borderless-style {
@@ -501,7 +501,6 @@ export const HALO_CSS = `
 @media (prefers-color-scheme: dark) {
     .halo__pad {
         background-color: rgba(26, 31, 38, 0.96);
-        border-color: rgba(148, 163, 184, 0.26);
         box-shadow: none;
     }
 
@@ -515,7 +514,6 @@ export const HALO_CSS = `
     }
 
     .halo__pad.is-off {
-        border-color: rgba(124, 58, 237, 0.08);
         box-shadow:
             inset 0 1px 0 rgba(255, 255, 255, 0.07),
             inset 0 0 42px rgba(168, 85, 247, 0.08),
