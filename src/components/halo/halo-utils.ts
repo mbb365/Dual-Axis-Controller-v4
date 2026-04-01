@@ -41,7 +41,10 @@ function quantizeFractionForStyle(value: number, style: HaloVisualStyle, axis: '
     if (style === 'pixel') {
         return quantizeFractionToCellCenter(value, STYLE_RESOLUTION[style][axis]);
     }
-    return quantizeFraction(value, STYLE_RESOLUTION[style][axis]);
+    if (style === 'matrix' || style === 'orb') {
+        return quantizeFraction(value, STYLE_RESOLUTION[style][axis]);
+    }
+    return clamp01(value);
 }
 
 export function yPosFromBrightness(brightness: number, visualStyle: HaloVisualStyle = 'plotter') {

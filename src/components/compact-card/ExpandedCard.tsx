@@ -65,6 +65,30 @@ const PAD_STYLE_OPTIONS: Array<{ style: HaloVisualStyle; label: string }> = [
     { style: 'plotter', label: 'Plotter' },
 ];
 
+function PadStylePreview({ style }: { style: HaloVisualStyle }) {
+    if (style === 'pixel') {
+        return (
+            <span className="dual-card__pad-style-preview dual-card__pad-style-preview--pixel" aria-hidden="true">
+                {Array.from({ length: 4 }).map((_, index) => (
+                    <span key={index} className="dual-card__pad-style-cell" />
+                ))}
+            </span>
+        );
+    }
+
+    if (style === 'matrix') {
+        return (
+            <span className="dual-card__pad-style-preview dual-card__pad-style-preview--matrix" aria-hidden="true">
+                {Array.from({ length: 12 }).map((_, index) => (
+                    <span key={index} className="dual-card__pad-style-dot" />
+                ))}
+            </span>
+        );
+    }
+
+    return <span className={`dual-card__pad-style-preview dual-card__pad-style-preview--${style}`} aria-hidden="true" />;
+}
+
 function ExpandedTitleRow({
     displayExpandedAreaName,
     displayExpandedPrimaryName,
@@ -121,7 +145,9 @@ function ModeControls({
         <div className="dual-card__mode-row">
             <button
                 type="button"
-                className={`dual-card__mode-pill ${uiMode === 'spectrum' && selectedColorHue == null ? 'is-active' : ''}`}
+                className={`dual-card__mode-pill dual-card__mode-pill--spectrum ${
+                    uiMode === 'spectrum' && selectedColorHue == null ? 'is-active' : ''
+                }`}
                 disabled={!canUseSpectrum}
                 onClick={() => onModeChange('spectrum')}
             >
@@ -138,7 +164,9 @@ function ModeControls({
             </button>
             <button
                 type="button"
-                className={`dual-card__mode-pill ${uiMode === 'temperature' ? 'is-active' : ''}`}
+                className={`dual-card__mode-pill dual-card__mode-pill--temperature ${
+                    uiMode === 'temperature' ? 'is-active' : ''
+                }`}
                 disabled={!canUseTemperature}
                 onClick={() => onModeChange('temperature')}
             >
@@ -149,95 +177,141 @@ function ModeControls({
 }
 
 function ColorPicker({
-    isDarkMode,
     selectedColorHue,
     onColorSelect,
-}: Pick<ExpandedCardProps, 'isDarkMode' | 'selectedColorHue' | 'onColorSelect'>) {
-    const [isOpen, setIsOpen] = useState(false);
+}: Pick<ExpandedCardProps, 'selectedColorHue' | 'onColorSelect'>) {
+    const [isArmed, setIsArmed] = useState(false);
     const pickerRef = useRef<HTMLDivElement>(null);
     const closeTimeoutRef = useRef<number | null>(null);
 
+    const clearCloseTimeout = () => {
+        if (closeTimeoutRef.current) {
+            window.clearTimeout(closeTimeoutRef.current);
+            closeTimeoutRef.current = null;
+        }
+    };
+
+    const collapsePicker = () => {
+        clearCloseTimeout();
+        setIsArmed(false);
+    };
+
+    const scheduleCollapse = () => {
+        clearCloseTimeout();
+        closeTimeoutRef.current = window.setTimeout(() => {
+            setIsArmed(false);
+            closeTimeoutRef.current = null;
+        }, 2500);
+    };
+
+    const armPicker = (withTimeout = false) => {
+        clearCloseTimeout();
+        setIsArmed(true);
+        if (withTimeout) {
+            scheduleCollapse();
+        }
+    };
+
     useEffect(() => {
-        if (!isOpen) return;
+        if (!isArmed) return;
 
         const handlePointerDown = (event: PointerEvent) => {
             if (!pickerRef.current?.contains(event.target as Node)) {
-                setIsOpen(false);
+                collapsePicker();
             }
         };
 
         window.addEventListener('pointerdown', handlePointerDown);
         return () => window.removeEventListener('pointerdown', handlePointerDown);
-    }, [isOpen]);
+    }, [isArmed]);
 
     useEffect(() => {
         return () => {
-            if (closeTimeoutRef.current) {
-                window.clearTimeout(closeTimeoutRef.current);
-            }
+            clearCloseTimeout();
         };
     }, []);
 
     const applyColorSelection = (nextHue: number) => {
         onColorSelect?.(nextHue);
-
-        if (closeTimeoutRef.current) {
-            window.clearTimeout(closeTimeoutRef.current);
-        }
-
-        // Keep the menu in place until the current tap fully settles so the
-        // touch/click cannot fall through to the control underneath on mobile.
-        closeTimeoutRef.current = window.setTimeout(() => {
-            setIsOpen(false);
-            closeTimeoutRef.current = null;
-        }, 140);
+        collapsePicker();
     };
 
     return (
-        <div className="dual-card__color-picker" ref={pickerRef}>
-            <button
-                type="button"
-                className={`dual-card__color-trigger ${selectedColorHue != null ? 'is-active' : ''} ${isOpen ? 'is-open' : ''}`}
-                aria-expanded={isOpen}
-                onClick={() => setIsOpen((current) => !current)}
-            >
-                <span className="dual-card__color-trigger-label">Colours</span>
-                <span className="dual-card__color-trigger-meta">
-                    {selectedColorHue != null ? (
-                        <span
-                            className="dual-card__color-trigger-swatch"
-                            style={{ ['--dual-card-swatch-color' as string]: `hsl(${selectedColorHue}, 100%, 50%)` }}
-                        />
-                    ) : null}
-                    <ha-icon
-                        icon={isOpen ? 'mdi:chevron-up' : 'mdi:chevron-down'}
-                        className="dual-card__color-trigger-icon"
-                    />
-                </span>
-            </button>
-            {isOpen ? (
-                <div className={`dual-card__color-menu${isDarkMode ? ' dual-card__color-menu--dark' : ''}`}>
+        <div
+            className={`dual-card__color-picker${isArmed ? ' is-armed' : ''}`}
+            ref={pickerRef}
+            style={{
+                ['--dual-card-selected-hue' as string]: `${selectedColorHue ?? 38}`,
+            }}
+            onPointerEnter={(event) => {
+                if (event.pointerType === 'mouse') {
+                    armPicker(false);
+                }
+            }}
+            onPointerLeave={(event) => {
+                if (event.pointerType === 'mouse') {
+                    collapsePicker();
+                }
+            }}
+            onPointerDown={(event) => {
+                const target = event.target as HTMLElement;
+                if (target.closest('.dual-card__color-inline-swatch')) {
+                    return;
+                }
+
+                if (event.pointerType === 'mouse') {
+                    if (isArmed) {
+                        collapsePicker();
+                    } else {
+                        armPicker(false);
+                    }
+                    return;
+                }
+
+                if (!isArmed) {
+                    event.preventDefault();
+                    armPicker(true);
+                    return;
+                }
+
+                event.preventDefault();
+                collapsePicker();
+            }}
+            onFocus={() => armPicker(false)}
+            onBlur={(event) => {
+                const nextTarget = event.relatedTarget as Node | null;
+                if (!pickerRef.current?.contains(nextTarget)) {
+                    scheduleCollapse();
+                }
+            }}
+            role="group"
+            aria-label="Colours"
+        >
+            <div className="dual-card__color-trigger" aria-expanded={isArmed}>
+                <div className="dual-card__color-inline-strip" aria-hidden="true">
                     {COLOR_SWATCHES.map((swatch) => (
                         <button
                             key={swatch.label}
                             type="button"
-                            className={`dual-card__color-swatch${selectedColorHue === swatch.hue ? ' is-active' : ''}`}
+                            className={`dual-card__color-inline-swatch${selectedColorHue === swatch.hue ? ' is-selected' : ''}`}
                             aria-label={swatch.label}
                             title={swatch.label}
+                            tabIndex={isArmed ? 0 : -1}
                             onPointerDown={(event) => {
                                 event.preventDefault();
                                 event.stopPropagation();
+                                if (!isArmed) {
+                                    armPicker(true);
+                                    return;
+                                }
                                 applyColorSelection(swatch.hue);
                             }}
-                            onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                            }}
+                            onFocus={() => armPicker(false)}
                             style={{ ['--dual-card-swatch-color' as string]: `hsl(${swatch.hue}, 100%, 50%)` }}
                         />
                     ))}
                 </div>
-            ) : null}
+            </div>
         </div>
     );
 }
@@ -257,10 +331,7 @@ function PadStylePicker({
                     title={option.label}
                     onClick={() => onPadVisualStyleChange?.(option.style)}
                 >
-                    <span
-                        className={`dual-card__pad-style-preview dual-card__pad-style-preview--${option.style}`}
-                        aria-hidden="true"
-                    />
+                    <PadStylePreview style={option.style} />
                 </button>
             ))}
         </div>
@@ -313,20 +384,30 @@ function GroupedLightsSection({
 
     return (
         <div className="dual-card__group-section">
-            <div className="dual-card__scope-row" role="tablist" aria-label="Control scope">
+            <div className="dual-card__scope-row" role="radiogroup" aria-label="Control scope">
                 <button
                     type="button"
-                    className={`dual-card__scope-pill ${controlScope === 'group' ? 'is-active' : ''}`}
+                    className={`dual-card__scope-pill dual-card__scope-pill--group ${
+                        controlScope === 'group' ? 'is-active' : ''
+                    }`}
+                    role="radio"
+                    aria-checked={controlScope === 'group'}
                     onClick={() => onControlScopeChange?.('group')}
                 >
-                    Group
+                    <span className="dual-card__scope-indicator" aria-hidden="true" />
+                    <span className="dual-card__scope-label">Group</span>
                 </button>
                 <button
                     type="button"
-                    className={`dual-card__scope-pill ${controlScope === 'group-relative' ? 'is-active' : ''}`}
+                    className={`dual-card__scope-pill dual-card__scope-pill--group-relative ${
+                        controlScope === 'group-relative' ? 'is-active' : ''
+                    }`}
+                    role="radio"
+                    aria-checked={controlScope === 'group-relative'}
                     onClick={() => onControlScopeChange?.('group-relative')}
                 >
-                    Group Relative
+                    <span className="dual-card__scope-indicator" aria-hidden="true" />
+                    <span className="dual-card__scope-label">Group Relative</span>
                 </button>
             </div>
 
@@ -474,7 +555,6 @@ export function ExpandedCard({
 
             <div className="dual-card__utility-row">
                 <ColorPicker
-                    isDarkMode={isDarkMode}
                     selectedColorHue={selectedColorHue}
                     onColorSelect={onColorSelect}
                 />

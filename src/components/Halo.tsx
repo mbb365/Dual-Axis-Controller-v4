@@ -449,14 +449,14 @@ export function Halo({
     const pixelCells =
         isBrickStyle
             ? PIXEL_GRID_CELLS.map((cell) => {
-                  const xFraction = (cell.column + 0.5) / PIXEL_GRID_SIZE;
-                  const yFraction = (cell.row + 0.5) / PIXEL_GRID_SIZE;
+                  const xFraction = PIXEL_GRID_SIZE > 1 ? cell.column / (PIXEL_GRID_SIZE - 1) : 0.5;
+                  const yFraction = PIXEL_GRID_SIZE > 1 ? cell.row / (PIXEL_GRID_SIZE - 1) : 0.5;
                   const selection = selectionFromFractions(xFraction, yFraction, mode, lockedSpectrumHue);
                   const markerState = pixelMarkerLookup?.[`${cell.row}-${cell.column}`] ?? null;
                   const isLit =
                       (isOn &&
-                          (cell.row > selectedBrickRow ||
-                              (cell.row === selectedBrickRow && cell.column <= selectedBrickColumn))) ||
+                          cell.row >= selectedBrickRow &&
+                          cell.column <= selectedBrickColumn) ||
                       Boolean(markerState?.isOn);
                   const isTopLitCell = isLit && cell.row === selectedBrickRow;
                   const hasMarker = Boolean(markerState);
