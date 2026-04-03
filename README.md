@@ -6,7 +6,7 @@
 
 A Home Assistant custom dashboard card for lights with a single adaptive layout.
 
-Stop using two inputs to control one output!
+Just say no to using two inputs to control one output!!!
 
 ## Features
 
@@ -35,4 +35,4 @@ layout: auto
 
 ## Notes
 
-- Current known issue for the controller pad not disabling after using the on/off button when in Group Relative mode.
+- I am looking for feedback on performed vs. expected bahaviour
