@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { CompactCard, type CardLayout, type GroupedLightOption } from './components/CompactCard';
 import { PopupCardShell } from './components/card-popup/PopupCardShell';
 import type { HaloMarker, HaloVisualStyle } from './components/Halo';
-import { activateScene, callLightService, createSceneSnapshot, deleteScene, getLightState } from './services/ha-connection';
+import {
+    activateScene,
+    callLightService,
+    createSceneDefinition,
+    deleteScene,
+    getLightState,
+} from './services/ha-connection';
 import { usePopupSheet } from './hooks/use-popup-sheet';
 import {
     buildCompactCardState,
@@ -24,12 +30,16 @@ import {
 } from './utils/control-state';
 import {
     appendFavoritePreset,
+    buildFavoriteSceneEntities,
+    buildSharedFavoriteSceneEntityId,
     buildBuiltinFavoritePresets,
     createGroupFavoritePreset,
-    createIndividualFavoritePreset,
+    createOwnedIndividualFavoritePreset,
     favoriteSettingsMatch,
     loadFavoritePresets,
+    loadSharedFavoritePresets,
     saveFavoritePresets,
+    isSharedFavoriteSceneEntityId,
     type FavoriteMemberPreset,
     type FavoritePreset,
     type FavoriteSettings,
@@ -272,6 +282,9 @@ export function CardApp({
     const groupedLights: GroupedLightOption[] = buildGroupedLights(hass, groupedLightIds);
     const isDarkMode = Boolean(hass?.themes?.darkMode);
     const groupedLightIdsKey = groupedLightIds.join('|');
+    const compactVisibleIsOn = groupedLightIds.length
+        ? groupedLightIds.some((memberId) => getLightState(hass, memberId)?.state === 'on')
+        : groupLight?.state === 'on';
     const separatedGroupedLightCount = groupedLightIds.length ? countSeparatedGroupedLights(hass, groupedLightIds) : 0;
     const shouldForceGroupRelative = separatedGroupedLightCount >= 2;
     const effectiveControlScope: ControlScope = shouldForceGroupRelative ? 'group-relative' : controlScope;
@@ -408,12 +421,78 @@ export function CardApp({
 
     useEffect(() => {
         const storedFavorites = loadFavoritePresets(entityId);
-        const hydratedFavorites = storedFavorites.filter((favorite) => !hass?.states || favorite.sceneEntityId in hass.states);
-        setFavoritePresets(hydratedFavorites);
-        if (hydratedFavorites.length !== storedFavorites.length) {
-            saveFavoritePresets(entityId, hydratedFavorites);
-        }
+        const sharedFavorites = loadSharedFavoritePresets(hass, entityId);
+        const mergedFavorites = Array.from(
+            new Map(
+                [...sharedFavorites, ...storedFavorites].map((favorite) => [favorite.sceneEntityId, favorite])
+            ).values()
+        )
+            .sort((left, right) => left.createdAt - right.createdAt)
+            .slice(-3);
+
+        setFavoritePresets(mergedFavorites);
+        saveFavoritePresets(entityId, mergedFavorites);
     }, [entityId, hass]);
+
+    useEffect(() => {
+        const migratableFavorites = favoritePresets.filter(
+            (favorite) => !isSharedFavoriteSceneEntityId(favorite.sceneEntityId, entityId)
+        );
+        if (!hass || !migratableFavorites.length) {
+            return;
+        }
+
+        void (async () => {
+            let nextFavorites = favoritePresets;
+            let changed = false;
+
+            for (const favorite of migratableFavorites) {
+                const nextSceneEntityId = buildSharedFavoriteSceneEntityId(
+                    entityId,
+                    favorite.id,
+                    favorite.createdAt,
+                    favorite.scope,
+                    favorite.settings,
+                    favorite.entityId
+                );
+                if (nextSceneEntityId === favorite.sceneEntityId) {
+                    continue;
+                }
+
+                const migratedFavorite = {
+                    ...favorite,
+                    sceneEntityId: nextSceneEntityId,
+                } satisfies FavoritePreset;
+
+                try {
+                    await createSceneDefinition(hass, nextSceneEntityId, buildFavoriteSceneEntities(migratedFavorite));
+                    if (hass?.states?.[favorite.sceneEntityId]) {
+                        await deleteScene(hass, favorite.sceneEntityId);
+                    }
+
+                    nextFavorites = nextFavorites.map((candidate) =>
+                        candidate.id === favorite.id ? migratedFavorite : candidate
+                    );
+                    changed = true;
+                } catch (error) {
+                    console.error('[Dual Halo Controller] Failed to migrate favourite to shared scene metadata', {
+                        entityId,
+                        favoriteId: favorite.id,
+                        previousSceneEntityId: favorite.sceneEntityId,
+                        nextSceneEntityId,
+                        error,
+                    });
+                }
+            }
+
+            if (!changed) {
+                return;
+            }
+
+            setFavoritePresets(nextFavorites);
+            saveFavoritePresets(entityId, nextFavorites);
+        })();
+    }, [entityId, favoritePresets, hass]);
 
     useEffect(() => {
         const storedControllerSession = loadControllerSession(entityId);
@@ -1241,7 +1320,7 @@ export function CardApp({
         if (!toggleTargetLight) return;
 
         stopDiscoMode();
-        const nextState = toggleTargetLight.state !== 'on';
+        const nextState = !compactVisibleIsOn;
         if (!nextState) {
             if (effectiveControlScope === 'group-relative') {
                 const currentRelativeLayout = ensureGroupRelativeLayout();
@@ -1278,6 +1357,7 @@ export function CardApp({
         hass,
         light,
         markInteraction,
+        compactVisibleIsOn,
         rememberLastLitControlSettings,
         rememberLastLitGroupRelativeLayout,
         restoreRememberedControllerState,
@@ -1332,6 +1412,10 @@ export function CardApp({
             if (favorite.scope === 'individual') {
                 const liveSettings = buildFavoriteSettingsFromLight(getLightState(hass, favorite.entityId));
                 return liveSettings ? favoriteSettingsMatch(favorite.settings, liveSettings) : false;
+            }
+
+            if (!favorite.members.length) {
+                return favoriteSettingsMatch(favorite.settings, currentFavoriteSettings);
             }
 
             return favorite.members.every((member) => {
@@ -1462,7 +1546,6 @@ export function CardApp({
     const handleFavoriteSave = useCallback(() => {
         void (async () => {
             let nextFavorite;
-            let snapshotEntities: string[] = [];
 
             if (effectiveControlScope === 'individual' && controlledLightEntityId) {
                 const targetSettings = buildFavoriteSettingsFromLight(getLightState(hass, controlledLightEntityId));
@@ -1470,8 +1553,7 @@ export function CardApp({
                     return;
                 }
 
-                nextFavorite = createIndividualFavoritePreset(controlledLightEntityId, targetSettings);
-                snapshotEntities = [controlledLightEntityId];
+                nextFavorite = createOwnedIndividualFavoritePreset(entityId, controlledLightEntityId, targetSettings);
             } else {
                 const memberPresets: FavoriteMemberPreset[] = groupedLightIds
                     .map((memberEntityId) => {
@@ -1494,15 +1576,13 @@ export function CardApp({
 
                 if (memberPresets.length) {
                     nextFavorite = createGroupFavoritePreset(entityId, currentFavoriteSettings, memberPresets);
-                    snapshotEntities = memberPresets.map((member) => member.entityId);
                 } else {
                     const targetSettings = buildFavoriteSettingsFromLight(groupLight ?? light);
                     if (!targetSettings) {
                         return;
                     }
 
-                    nextFavorite = createIndividualFavoritePreset(entityId, targetSettings);
-                    snapshotEntities = [entityId];
+                    nextFavorite = createOwnedIndividualFavoritePreset(entityId, entityId, targetSettings);
                 }
             }
 
@@ -1512,7 +1592,7 @@ export function CardApp({
             );
 
             try {
-                await createSceneSnapshot(hass, nextFavorite.sceneEntityId, snapshotEntities);
+                await createSceneDefinition(hass, nextFavorite.sceneEntityId, buildFavoriteSceneEntities(nextFavorite));
                 await Promise.all(removedFavorites.map((favorite) => deleteScene(hass, favorite.sceneEntityId)));
                 setFavoritePresets(nextFavorites);
                 saveFavoritePresets(entityId, nextFavorites);
@@ -1570,14 +1650,16 @@ export function CardApp({
                 let nextFavorites = favoritePresets.filter((favorite) => !deletions.has(favorite.id));
                 const deletedFavorites = favoritePresets.filter((favorite) => deletions.has(favorite.id));
                 let nextFavorite: FavoritePreset | null = null;
-                let snapshotEntities: string[] = [];
 
                 if (shouldSaveCurrent) {
                     if (effectiveControlScope === 'individual' && controlledLightEntityId) {
                         const targetSettings = buildFavoriteSettingsFromLight(getLightState(hass, controlledLightEntityId));
                         if (targetSettings) {
-                            nextFavorite = createIndividualFavoritePreset(controlledLightEntityId, targetSettings);
-                            snapshotEntities = [controlledLightEntityId];
+                            nextFavorite = createOwnedIndividualFavoritePreset(
+                                entityId,
+                                controlledLightEntityId,
+                                targetSettings
+                            );
                         }
                     } else {
                         const memberPresets: FavoriteMemberPreset[] = groupedLightIds
@@ -1601,12 +1683,10 @@ export function CardApp({
 
                         if (memberPresets.length) {
                             nextFavorite = createGroupFavoritePreset(entityId, currentFavoriteSettings, memberPresets);
-                            snapshotEntities = memberPresets.map((member) => member.entityId);
                         } else {
                             const targetSettings = buildFavoriteSettingsFromLight(groupLight ?? light);
                             if (targetSettings) {
-                                nextFavorite = createIndividualFavoritePreset(entityId, targetSettings);
-                                snapshotEntities = [entityId];
+                                nextFavorite = createOwnedIndividualFavoritePreset(entityId, entityId, targetSettings);
                             }
                         }
                     }
@@ -1622,7 +1702,11 @@ export function CardApp({
 
                 try {
                     if (nextFavorite) {
-                        await createSceneSnapshot(hass, nextFavorite.sceneEntityId, snapshotEntities);
+                        await createSceneDefinition(
+                            hass,
+                            nextFavorite.sceneEntityId,
+                            buildFavoriteSceneEntities(nextFavorite)
+                        );
                     }
                     await Promise.all(
                         removedFavorites.map((favorite) => deleteScene(hass, favorite.sceneEntityId))
@@ -1678,11 +1762,71 @@ export function CardApp({
             if (favorite.scope === 'group') {
                 activeEntityIdRef.current = entityId;
                 setControlScope('group');
+                controlledLightEntityIdRef.current = null;
                 setControlledLightEntityId(null);
+
+                if (favorite.settings.isOn && favorite.settings.brightness > 0) {
+                    rememberLastLitControlSettings(entityId, {
+                        ...favorite.settings,
+                        brightness: Math.max(1, favorite.settings.brightness),
+                        isOn: true,
+                    });
+                }
+
+                const groupCommands = favorite.members
+                    .map((member) => {
+                        const targetLight = getLightState(hass, member.entityId);
+                        if (!targetLight) return null;
+
+                        return buildQueuedControlCommand(
+                            member.entityId,
+                            targetLight,
+                            {
+                                brightness: member.settings.brightness,
+                                hue: member.settings.hue,
+                                saturation: member.settings.saturation,
+                            },
+                            member.settings.mode
+                        );
+                    })
+                    .filter((command): command is QueuedControlCommand => command != null);
+
+                if (groupCommands.length) {
+                    queueControlCommand(groupCommands);
+                    flushQueuedControlCommand(true);
+                    return;
+                }
             } else {
                 activeEntityIdRef.current = favorite.entityId;
                 setControlScope('individual');
+                controlledLightEntityIdRef.current = favorite.entityId;
                 setControlledLightEntityId(favorite.entityId);
+
+                const targetLight = getLightState(hass, favorite.entityId);
+                if (targetLight) {
+                    if (favorite.settings.isOn && favorite.settings.brightness > 0) {
+                        rememberLastLitControlSettings(favorite.entityId, {
+                            ...favorite.settings,
+                            brightness: Math.max(1, favorite.settings.brightness),
+                            isOn: true,
+                        });
+                    }
+
+                    const nextCommand = buildQueuedControlCommand(
+                        favorite.entityId,
+                        targetLight,
+                        {
+                            brightness: favorite.settings.brightness,
+                            hue: favorite.settings.hue,
+                            saturation: favorite.settings.saturation,
+                        },
+                        favorite.settings.mode
+                    );
+
+                    queueControlCommand([nextCommand]);
+                    flushQueuedControlCommand(true);
+                    return;
+                }
             }
 
             void activateScene(hass, favorite.sceneEntityId).catch((error) => {
@@ -1694,7 +1838,17 @@ export function CardApp({
                 });
             });
         },
-        [clearInteractionLock, entityId, favoritePresets, hass, markInteraction, stopDiscoMode]
+        [
+            clearInteractionLock,
+            entityId,
+            favoritePresets,
+            flushQueuedControlCommand,
+            hass,
+            markInteraction,
+            queueControlCommand,
+            rememberLastLitControlSettings,
+            stopDiscoMode,
+        ]
     );
 
     const handleGroupedLightSelect = useCallback((nextEntityId: string) => {

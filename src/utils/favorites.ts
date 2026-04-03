@@ -52,6 +52,7 @@ interface SunTimingSource {
 }
 
 const FAVORITES_KEY_PREFIX = 'dual-axis-controller:favorites:';
+const SHARED_SCENE_VERSION = 'f2';
 export const MAX_FAVORITES = 3;
 export const BUILTIN_CANDLELIGHT_FAVORITE_ID = 'builtin-candlelight';
 export const BUILTIN_CIRCADIAN_FAVORITE_ID = 'builtin-circadian';
@@ -76,6 +77,27 @@ function interpolate(start: number, end: number, progress: number) {
 
 function storageKey(entityId: string) {
     return `${FAVORITES_KEY_PREFIX}${entityId}`;
+}
+
+function encodeAsciiHex(value: string) {
+    return Array.from(value)
+        .map((character) => character.charCodeAt(0).toString(16).padStart(2, '0'))
+        .join('');
+}
+
+function decodeAsciiHex(value: string) {
+    if (!value || value.length % 2 !== 0) return null;
+
+    let decodedValue = '';
+    for (let index = 0; index < value.length; index += 2) {
+        const nextCode = Number.parseInt(value.slice(index, index + 2), 16);
+        if (Number.isNaN(nextCode)) {
+            return null;
+        }
+        decodedValue += String.fromCharCode(nextCode);
+    }
+
+    return decodedValue;
 }
 
 function sanitizeSceneToken(value: string) {
@@ -323,20 +345,220 @@ export function buildFavoriteLabel(settings: FavoriteSettings, scope: FavoritePr
 
 export function buildFavoriteSceneEntityId(entityId: string, favoriteId: string) {
     const entityToken = sanitizeSceneToken(entityId.replace('.', '_'));
-    const favoriteToken = sanitizeSceneToken(favoriteId).slice(0, 18);
+    const favoriteToken = sanitizeSceneToken(favoriteId).slice(0, 10) || 'favorite';
     return `scene.dac_${entityToken}_${favoriteToken}`;
+}
+
+function encodeSceneMetaToken(value: number | null | undefined) {
+    if (value == null || Number.isNaN(value)) return 'n';
+    return Math.max(0, Math.round(value)).toString(36);
+}
+
+function decodeSceneMetaToken(value: string) {
+    if (!value || value === 'n') return null;
+    const parsedValue = Number.parseInt(value, 36);
+    return Number.isNaN(parsedValue) ? null : parsedValue;
+}
+
+export function buildSharedFavoriteSceneEntityId(
+    ownerEntityId: string,
+    favoriteId: string,
+    createdAt: number,
+    scope: FavoritePreset['scope'],
+    settings: FavoriteSettings,
+    targetEntityId: string = ownerEntityId
+) {
+    const entityToken = sanitizeSceneToken(ownerEntityId.replace('.', '_'));
+    const favoriteToken = sanitizeSceneToken(favoriteId).slice(0, 10) || 'favorite';
+    const normalizedSettings = normalizeFavoriteSettings(settings);
+    const scopeToken = scope === 'group' ? 'g' : 'i';
+    const modeToken = normalizedSettings.mode === 'temperature' ? 't' : 's';
+    const onToken = normalizedSettings.isOn && normalizedSettings.brightness > 0 ? '1' : '0';
+    const brightnessToken = encodeSceneMetaToken(normalizedSettings.brightness);
+    const hueToken = encodeSceneMetaToken(normalizedSettings.hue);
+    const saturationToken = encodeSceneMetaToken(normalizedSettings.saturation);
+    const kelvinToken = encodeSceneMetaToken(normalizedSettings.kelvin);
+    const selectedColorHueToken = encodeSceneMetaToken(normalizedSettings.selectedColorHue);
+    const createdAtToken = encodeSceneMetaToken(createdAt);
+    const targetEntityToken = encodeAsciiHex(targetEntityId);
+
+    return `scene.dac_${entityToken}_${SHARED_SCENE_VERSION}_${scopeToken}_${modeToken}_${onToken}_${brightnessToken}_${hueToken}_${saturationToken}_${kelvinToken}_${selectedColorHueToken}_${createdAtToken}_${favoriteToken}_${targetEntityToken}`;
+}
+
+function scenePrefix(entityId: string) {
+    return `scene.dac_${sanitizeSceneToken(entityId.replace('.', '_'))}_`;
+}
+
+export function isSharedFavoriteSceneEntityId(sceneEntityId: string, entityId: string) {
+    return sceneEntityId.startsWith(`${scenePrefix(entityId)}${SHARED_SCENE_VERSION}_`);
+}
+
+export function buildFavoriteSceneEntities(favorite: FavoritePreset) {
+    const buildLightSceneState = (settings: FavoriteSettings) => {
+        const normalizedSettings = normalizeFavoriteSettings(settings);
+
+        if (!normalizedSettings.isOn || normalizedSettings.brightness <= 0) {
+            return 'off';
+        }
+
+        const brightness255 = Math.round((normalizedSettings.brightness / 100) * 255);
+        if (normalizedSettings.mode === 'temperature') {
+            return {
+                state: 'on',
+                brightness: brightness255,
+                color_mode: 'color_temp',
+                ...(normalizedSettings.kelvin != null ? { color_temp_kelvin: Math.round(normalizedSettings.kelvin) } : {}),
+            };
+        }
+
+        return {
+            state: 'on',
+            brightness: brightness255,
+            color_mode: 'hs',
+            hs_color: [
+                Math.round(normalizedSettings.selectedColorHue ?? normalizedSettings.hue),
+                Math.round(normalizedSettings.saturation),
+            ] as [number, number],
+        };
+    };
+
+    if (favorite.scope === 'individual') {
+        return {
+            [favorite.entityId]: buildLightSceneState(favorite.settings),
+        };
+    }
+
+    return Object.fromEntries(
+        favorite.members.map((member) => [member.entityId, buildLightSceneState(member.settings)])
+    );
+}
+
+export function parseSharedFavoritePresetFromSceneState(
+    entityId: string,
+    sceneEntityId: string
+): FavoritePreset | null {
+    const prefix = `${scenePrefix(entityId)}${SHARED_SCENE_VERSION}_`;
+    if (!sceneEntityId.startsWith(prefix)) {
+        return null;
+    }
+
+    const encodedValue = sceneEntityId.slice(prefix.length);
+    const [
+        scopeToken,
+        modeToken,
+        onToken,
+        brightnessToken,
+        hueToken,
+        saturationToken,
+        kelvinToken,
+        selectedColorHueToken,
+        createdAtToken,
+        favoriteToken,
+        targetEntityToken,
+    ] = encodedValue.split('_');
+
+    if (!scopeToken || !modeToken || !onToken || !brightnessToken || !hueToken || !saturationToken || !createdAtToken) {
+        return null;
+    }
+
+    const scope = scopeToken === 'g' ? 'group' : scopeToken === 'i' ? 'individual' : null;
+    const mode = modeToken === 't' ? 'temperature' : modeToken === 's' ? 'spectrum' : null;
+    const brightness = decodeSceneMetaToken(brightnessToken);
+    const hue = decodeSceneMetaToken(hueToken);
+    const saturation = decodeSceneMetaToken(saturationToken);
+    const createdAt = decodeSceneMetaToken(createdAtToken);
+
+    if (!scope || !mode || brightness == null || hue == null || saturation == null || createdAt == null) {
+        return null;
+    }
+
+    const settings = normalizeFavoriteSettings({
+        brightness,
+        hue,
+        isOn: onToken === '1',
+        kelvin: decodeSceneMetaToken(kelvinToken),
+        mode,
+        saturation,
+        selectedColorHue: decodeSceneMetaToken(selectedColorHueToken),
+    });
+    const id = favoriteToken ? `shared-${favoriteToken}-${createdAtToken}` : `shared-${createdAtToken}`;
+    const targetEntityId = decodeAsciiHex(targetEntityToken ?? '') ?? entityId;
+
+    if (scope === 'individual') {
+        return {
+            createdAt,
+            entityId: targetEntityId,
+            id,
+            label: buildFavoriteLabel(settings, scope),
+            sceneEntityId,
+            scope,
+            settings,
+        };
+    }
+
+    return {
+        createdAt,
+        entityId,
+        id,
+        label: buildFavoriteLabel(settings, scope),
+        members: [],
+        sceneEntityId,
+        scope,
+        settings,
+    };
+}
+
+export function loadSharedFavoritePresets(hass: any, entityId: string) {
+    if (!hass?.states) {
+        return [] as FavoritePreset[];
+    }
+
+    return Object.keys(hass.states)
+        .filter((stateEntityId) => isSharedFavoriteSceneEntityId(stateEntityId, entityId))
+        .map((sceneEntityId) => parseSharedFavoritePresetFromSceneState(entityId, sceneEntityId))
+        .filter((favorite): favorite is FavoritePreset => favorite != null)
+        .sort((left, right) => left.createdAt - right.createdAt)
+        .slice(-MAX_FAVORITES);
 }
 
 export function createIndividualFavoritePreset(entityId: string, settings: FavoriteSettings): IndividualFavoritePreset {
     const normalizedSettings = normalizeFavoriteSettings(settings);
     const id = randomFavoriteId();
+    const createdAt = Date.now();
 
     return {
-        createdAt: Date.now(),
+        createdAt,
         entityId,
         id,
         label: buildFavoriteLabel(normalizedSettings, 'individual'),
-        sceneEntityId: buildFavoriteSceneEntityId(entityId, id),
+        sceneEntityId: buildSharedFavoriteSceneEntityId(entityId, id, createdAt, 'individual', normalizedSettings),
+        scope: 'individual',
+        settings: normalizedSettings,
+    };
+}
+
+export function createOwnedIndividualFavoritePreset(
+    ownerEntityId: string,
+    targetEntityId: string,
+    settings: FavoriteSettings
+): IndividualFavoritePreset {
+    const normalizedSettings = normalizeFavoriteSettings(settings);
+    const id = randomFavoriteId();
+    const createdAt = Date.now();
+
+    return {
+        createdAt,
+        entityId: targetEntityId,
+        id,
+        label: buildFavoriteLabel(normalizedSettings, 'individual'),
+        sceneEntityId: buildSharedFavoriteSceneEntityId(
+            ownerEntityId,
+            id,
+            createdAt,
+            'individual',
+            normalizedSettings,
+            targetEntityId
+        ),
         scope: 'individual',
         settings: normalizedSettings,
     };
@@ -353,14 +575,15 @@ export function createGroupFavoritePreset(
     }));
     const normalizedSettings = normalizeFavoriteSettings(settings);
     const id = randomFavoriteId();
+    const createdAt = Date.now();
 
     return {
-        createdAt: Date.now(),
+        createdAt,
         entityId,
         id,
         label: buildFavoriteLabel(normalizedSettings, 'group'),
         members: normalizedMembers,
-        sceneEntityId: buildFavoriteSceneEntityId(entityId, id),
+        sceneEntityId: buildSharedFavoriteSceneEntityId(entityId, id, createdAt, 'group', normalizedSettings),
         scope: 'group',
         settings: normalizedSettings,
     };

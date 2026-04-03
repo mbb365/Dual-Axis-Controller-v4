@@ -248,16 +248,22 @@ function MockHomeAssistant() {
                               (entityId): entityId is string => typeof entityId === 'string' && entityId in memberStates
                           )
                         : [];
+                    const explicitEntities =
+                        serviceData.entities && typeof serviceData.entities === 'object'
+                            ? Object.entries(serviceData.entities as Record<string, unknown>).filter(
+                                  ([entityId]) => typeof entityId === 'string' && entityId in memberStates
+                              )
+                            : [];
 
-                    if (!snapshotEntities.length) return;
+                    if (!snapshotEntities.length && !explicitEntities.length) return;
 
                     const nextEntityId = `scene.${serviceData.scene_id}`;
                     setSavedScenes((previous) => ({
                         ...previous,
                         [nextEntityId]: {
                             friendly_name: String(serviceData.scene_id).replace(/^dac_/, '').replace(/_/g, ' '),
-                            snapshot: Object.fromEntries(
-                                snapshotEntities.map((entityId) => [
+                            snapshot: Object.fromEntries([
+                                ...snapshotEntities.map((entityId) => [
                                     entityId,
                                     {
                                         ...memberStates[entityId as keyof typeof memberStates],
@@ -265,8 +271,39 @@ function MockHomeAssistant() {
                                             ...memberStates[entityId as keyof typeof memberStates].attributes,
                                         },
                                     },
-                                ])
-                            ),
+                                ]),
+                                ...explicitEntities.map(([entityId, entityState]) => {
+                                    const definition = entityState as Record<string, unknown> | string;
+                                    const baseState = memberStates[entityId as keyof typeof memberStates];
+                                    if (typeof definition === 'string') {
+                                        return [
+                                            entityId,
+                                            {
+                                                ...baseState,
+                                                state: definition,
+                                                attributes: { ...baseState.attributes },
+                                            },
+                                        ];
+                                    }
+
+                                    return [
+                                        entityId,
+                                        {
+                                            ...baseState,
+                                            state:
+                                                typeof definition.state === 'string'
+                                                    ? definition.state
+                                                    : baseState.state,
+                                            attributes: {
+                                                ...baseState.attributes,
+                                                ...Object.fromEntries(
+                                                    Object.entries(definition).filter(([key]) => key !== 'state')
+                                                ),
+                                            },
+                                        },
+                                    ];
+                                }),
+                            ]),
                         },
                     }));
                     return;

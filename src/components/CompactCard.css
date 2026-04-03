@@ -15,6 +15,7 @@
     --dual-card-control-hover: rgba(255, 255, 255, 0.94);
     --dual-card-theme-primary: var(--primary-color, #03a9f4);
     --dual-card-theme-accent: var(--accent-color, var(--primary-color, #03a9f4));
+    --dual-card-button-stroke-width: 1.5px;
     --dual-card-active-surface:
         linear-gradient(
             135deg,
@@ -212,7 +213,7 @@
     -webkit-appearance: none;
     width: 40px;
     height: 40px;
-    border: 1px solid rgba(148, 163, 184, 0.35);
+    border: var(--dual-card-button-stroke-width) solid rgba(148, 163, 184, 0.35);
     border-radius: 999px;
     background: var(--dual-card-control-idle);
     color: var(--dual-card-text);
@@ -249,7 +250,7 @@
     width: min(240px, calc(100vw - 40px));
     padding: 8px;
     border-radius: 18px;
-    border: 1px solid rgba(183, 192, 203, 0.72);
+    border: var(--dual-card-button-stroke-width) solid rgba(183, 192, 203, 0.72);
     background: rgba(255, 255, 255, 0.98);
     box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
 }
@@ -433,7 +434,7 @@
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    padding: 1.5px;
+    padding: var(--dual-card-button-stroke-width);
     pointer-events: none;
     -webkit-mask:
         linear-gradient(#000 0 0) content-box,
@@ -626,7 +627,7 @@
 .dual-card__favorite-pill {
     appearance: none;
     -webkit-appearance: none;
-    border: 2px solid var(--dual-card-favorite-stroke, rgba(148, 163, 184, 0.78));
+    border: var(--dual-card-button-stroke-width) solid var(--dual-card-favorite-stroke, rgba(148, 163, 184, 0.78));
     background: transparent;
     padding: 0 12px;
     display: inline-flex;
@@ -857,7 +858,7 @@
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    padding: 1.5px;
+    padding: var(--dual-card-button-stroke-width);
     pointer-events: none;
     -webkit-mask:
         linear-gradient(#000 0 0) content-box,
@@ -1285,7 +1286,7 @@
         position: absolute;
         inset: 0;
         border-radius: inherit;
-        padding: 1.5px;
+        padding: var(--dual-card-button-stroke-width);
         pointer-events: none;
         -webkit-mask:
             linear-gradient(#000 0 0) content-box,
@@ -1351,7 +1352,7 @@
         overflow-y: auto;
         overscroll-behavior: contain;
         scrollbar-gutter: stable;
-        border: 1px solid rgba(183, 192, 203, 0.72);
+        border: var(--dual-card-button-stroke-width) solid rgba(183, 192, 203, 0.72);
         border-radius: 18px;
         background: rgba(255, 255, 255, 0.98);
         box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);

@@ -542,7 +542,7 @@ export function Halo({
                   const hasMarker = Boolean(markerState);
                   const isActiveMarkerCell = Boolean(markerState?.isActive);
                   const isSelectedBrickCell = cell.row === selectedBrickRow && cell.column === selectedBrickColumn;
-                  const isFormationCell = formationBrickRow === cell.row && formationBrickColumn === cell.column;
+                  const isFormationCell = isOn && formationBrickRow === cell.row && formationBrickColumn === cell.column;
                   const isPrimaryBrickCell = isActiveMarkerCell || isSelectedBrickCell;
                   const markerGlowMultiplier = hasMarker ? (isActiveMarkerCell ? 1.15 : 0.3) : 1;
                   const baseLitColor = buildSurfaceNodeColor(
@@ -791,7 +791,7 @@ export function Halo({
                         }}
                     />
                 ) : null}
-                {formationIndicator && !isDiscoMode && !isBrickStyle ? (
+                {isOn && formationIndicator && !isDiscoMode && !isBrickStyle ? (
                     <button
                         type="button"
                         className="halo__indicator halo__indicator--formation is-group-relative"

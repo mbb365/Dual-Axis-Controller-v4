@@ -114,7 +114,12 @@ function SettingsMenu({
     }, [isOpen]);
 
     return (
-        <div className="dual-card__settings-anchor" ref={menuRef}>
+        <div
+            className="dual-card__settings-anchor"
+            ref={menuRef}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+        >
             <button
                 type="button"
                 className={`dual-card__header-icon-button ${isOpen ? 'is-active' : ''}`}
@@ -126,7 +131,7 @@ function SettingsMenu({
             </button>
 
             {isOpen ? (
-                <div className="dual-card__settings-menu">
+                <div className="dual-card__settings-menu" onPointerDown={(event) => event.stopPropagation()}>
                     <div className="dual-card__settings-section">
                         <div className="dual-card__settings-label">Controller style</div>
                         <div className="dual-card__settings-options" role="group" aria-label="Controller style">

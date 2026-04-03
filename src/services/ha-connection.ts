@@ -112,6 +112,19 @@ function sceneIdFromEntityId(sceneEntityId: string) {
     return sceneEntityId.replace(/^scene\./, '');
 }
 
+export async function createSceneDefinition(
+    hass: any,
+    sceneEntityId: string,
+    entities: Record<string, Record<string, any> | string>
+) {
+    if (!hass || !entities || !Object.keys(entities).length) return;
+
+    await hass.callService('scene', 'create', {
+        scene_id: sceneIdFromEntityId(sceneEntityId),
+        entities,
+    });
+}
+
 export async function createSceneSnapshot(hass: any, sceneEntityId: string, snapshotEntities: string[]) {
     if (!hass || !snapshotEntities.length) return;
 
