@@ -216,6 +216,10 @@ export function buildPadBackground(
         return 'transparent';
     }
 
+    if (visualStyle === 'matrix' && !isOn) {
+        return 'transparent';
+    }
+
     if (!isOn) {
         return 'radial-gradient(circle at 50% 50%, rgba(196, 181, 253, 0.34) 0%, rgba(196, 181, 253, 0.14) 26%, rgba(217, 222, 230, 0.08) 48%, rgba(216, 220, 228, 0) 72%), linear-gradient(145deg, rgba(239, 241, 245, 0.98) 0%, rgba(223, 227, 234, 0.96) 54%, rgba(210, 214, 222, 0.98) 100%)';
     }

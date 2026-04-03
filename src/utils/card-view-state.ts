@@ -134,7 +134,7 @@ export function buildGroupedLightMarkers(
         return relativeLayout.members.map((member) => ({
             entityId: member.entityId,
             isOn: member.brightness > 0,
-            isActive: false,
+            isActive: controlScope === 'group-relative' && controlledLightEntityId === member.entityId,
             ...(uiMode === 'spectrum' && lockedSpectrumHue != null
                 ? {
                       brightness: member.brightness,
@@ -260,9 +260,7 @@ export function buildCompactCardState({
         expandedSecondaryName: groupedLights.length
             ? controlScope === 'group'
                 ? null
-                : controlScope === 'group-relative'
-                  ? 'Group Relative'
-                  : groupedLights.find((groupedLight) => groupedLight.entityId === controlledLightEntityId)?.name ?? null
+                : groupedLights.find((groupedLight) => groupedLight.entityId === controlledLightEntityId)?.name ?? null
             : null,
     };
 }

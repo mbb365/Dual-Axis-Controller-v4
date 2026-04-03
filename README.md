@@ -1,9 +1,5 @@
 # Dual Axis Controller
 
-<p align="center">
-  <img src="./icon.png" alt="Dual Axis Controller icon" width="180" />
-</p>
-
 A Home Assistant custom dashboard card for lights with a single adaptive layout.
 
 Just say no to using two inputs to control one output!!!

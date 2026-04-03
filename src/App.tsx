@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { CompactCard, type CardLayout, type GroupedLightOption } from './components/CompactCard';
 import { PopupCardShell } from './components/card-popup/PopupCardShell';
 import type { HaloMarker, HaloVisualStyle } from './components/Halo';
-import { callLightService, getLightState } from './services/ha-connection';
+import { activateScene, callLightService, createSceneSnapshot, deleteScene, getLightState } from './services/ha-connection';
 import { usePopupSheet } from './hooks/use-popup-sheet';
 import {
     buildCompactCardState,
@@ -22,6 +22,24 @@ import {
     type QueuedControlCommand,
     xFractionFromHueSat,
 } from './utils/control-state';
+import {
+    appendFavoritePreset,
+    buildBuiltinFavoritePresets,
+    createGroupFavoritePreset,
+    createIndividualFavoritePreset,
+    favoriteSettingsMatch,
+    loadFavoritePresets,
+    saveFavoritePresets,
+    type FavoriteMemberPreset,
+    type FavoritePreset,
+    type FavoriteSettings,
+} from './utils/favorites';
+import {
+    loadControllerSession,
+    saveControllerSession,
+    type StoredControllerSession,
+    type StoredGroupRelativeLayout,
+} from './utils/controller-session';
 
 const CONTROL_SEND_INTERVAL_MS = 120;
 const CONTROL_SETTLE_DELAY_MS = 220;
@@ -30,7 +48,6 @@ const DISCO_SEND_INTERVAL_MS = 1100;
 export interface CardAppProps {
     hass: any;
     entityId: string;
-    icon?: string;
     name?: string;
     layout?: CardLayout | 'auto';
     onTapAction?: () => void;
@@ -38,50 +55,167 @@ export interface CardAppProps {
     onDoubleTapAction?: () => void;
 }
 
-function deriveAreaLabel(sourceName: string | undefined, fallbackEntityId: string, explicitAreaName?: string | null) {
-    const normalizedExplicitAreaName = explicitAreaName?.trim();
-    if (normalizedExplicitAreaName) {
-        return normalizedExplicitAreaName;
+function cloneGroupRelativeSnapshot(snapshot: GroupRelativeSnapshot): GroupRelativeSnapshot {
+    return {
+        ...snapshot,
+        members: snapshot.members.map((member) => ({
+            ...member,
+        })),
+    };
+}
+
+function hasLitGroupRelativeMembers(snapshot: GroupRelativeSnapshot | null | undefined) {
+    return Boolean(snapshot?.members.some((member) => member.brightness > 0));
+}
+
+function cloneFavoriteSettings(settings: FavoriteSettings): FavoriteSettings {
+    return {
+        ...settings,
+    };
+}
+
+function buildFavoriteSettingsFromLightState(
+    targetLight: ReturnType<typeof getLightState>
+): FavoriteSettings | null {
+    if (!targetLight) return null;
+
+    const inferredMode: 'temperature' | 'spectrum' =
+        targetLight.attributes.color_mode === 'color_temp' ||
+        (targetLight.attributes.color_temp_kelvin != null && targetLight.attributes.color_mode !== 'hs') ||
+        (targetLight.attributes.color_temp != null && targetLight.attributes.color_mode !== 'hs')
+            ? 'temperature'
+            : 'spectrum';
+
+    const markerValues = getMarkerControlValues(targetLight, inferredMode);
+    const resolvedKelvin =
+        inferredMode === 'temperature'
+            ? targetLight.attributes.color_temp_kelvin ??
+              (targetLight.attributes.color_temp ? Math.round(1000000 / targetLight.attributes.color_temp) : null)
+            : null;
+
+    return {
+        brightness: markerValues.brightness,
+        hue: markerValues.hue,
+        isOn: targetLight.state === 'on' && markerValues.brightness > 0,
+        kelvin: resolvedKelvin,
+        mode: inferredMode,
+        saturation: markerValues.saturation,
+        selectedColorHue: null,
+    };
+}
+
+function countSeparatedGroupedLights(hass: any, groupedLightIds: string[]) {
+    const memberSettings = groupedLightIds
+        .map((memberId) => buildFavoriteSettingsFromLightState(getLightState(hass, memberId)))
+        .filter((settings): settings is FavoriteSettings => settings != null);
+
+    if (memberSettings.length <= 1) {
+        return 0;
     }
 
-    const normalizedSourceName = sourceName?.trim();
-    if (normalizedSourceName) {
-        const withoutGroupSuffix = normalizedSourceName.replace(/\s+(group|lights?)$/i, '').trim();
-        if (withoutGroupSuffix && withoutGroupSuffix !== normalizedSourceName) {
-            return withoutGroupSuffix;
+    const clusters: Array<{ representative: FavoriteSettings; count: number }> = [];
+    for (const settings of memberSettings) {
+        const existingCluster = clusters.find((cluster) => favoriteSettingsMatch(cluster.representative, settings));
+        if (existingCluster) {
+            existingCluster.count += 1;
+            continue;
         }
+
+        clusters.push({
+            representative: settings,
+            count: 1,
+        });
     }
 
-    const entitySlug = fallbackEntityId.replace(/^[^.]+\./, '').replace(/_/g, ' ').trim();
-    return entitySlug ? entitySlug.charAt(0).toUpperCase() + entitySlug.slice(1) : null;
+    const dominantClusterSize = clusters.reduce((largest, cluster) => Math.max(largest, cluster.count), 0);
+    return Math.max(0, memberSettings.length - dominantClusterSize);
+}
+
+function serializeGroupRelativeSnapshot(snapshot: GroupRelativeSnapshot | null): StoredGroupRelativeLayout | null {
+    if (!snapshot) return null;
+
+    return {
+        mode: snapshot.mode,
+        averageBrightness: snapshot.averageBrightness,
+        averageX: snapshot.averageX,
+        members: snapshot.members.map((member) => ({
+            entityId: member.entityId,
+            x: member.x,
+            brightness: member.brightness,
+        })),
+    };
+}
+
+function hydrateStoredGroupRelativeLayout(
+    storedLayout: StoredGroupRelativeLayout | null,
+    hass: any,
+    groupedLightIds: string[]
+): GroupRelativeSnapshot | null {
+    if (!storedLayout) return null;
+    if (
+        storedLayout.members.length !== groupedLightIds.length ||
+        storedLayout.members.some((member) => !groupedLightIds.includes(member.entityId))
+    ) {
+        return null;
+    }
+
+    const hydratedMembers = storedLayout.members
+        .map((member) => {
+            const light = getLightState(hass, member.entityId);
+            if (!light) return null;
+
+            return {
+                ...member,
+                light,
+            };
+        })
+        .filter((member): member is NonNullable<typeof member> => member !== null);
+
+    if (hydratedMembers.length !== storedLayout.members.length) {
+        return null;
+    }
+
+    return {
+        mode: storedLayout.mode,
+        averageBrightness: storedLayout.averageBrightness,
+        averageX: storedLayout.averageX,
+        members: hydratedMembers,
+    };
 }
 
 export function CardApp({
     hass,
     entityId,
-    icon = 'mdi:lightbulb',
     name,
     layout = 'auto',
     onTapAction,
     onHoldAction,
     onDoubleTapAction,
 }: CardAppProps) {
+    const initialControllerSessionRef = useRef<StoredControllerSession | null>(loadControllerSession(entityId));
+    const initialControllerSession = initialControllerSessionRef.current;
     const groupLight = getLightState(hass, entityId);
     const groupedLightIds = getGroupedLightIds(groupLight);
-    const [controlScope, setControlScope] = useState<ControlScope>('group');
-    const [controlledLightEntityId, setControlledLightEntityId] = useState<string | null>(null);
+    const [controlScope, setControlScope] = useState<ControlScope>(initialControllerSession?.controlScope ?? 'group');
+    const [controlledLightEntityId, setControlledLightEntityId] = useState<string | null>(
+        initialControllerSession?.controlledLightEntityId ?? null
+    );
+    const controlledLightEntityIdRef = useRef<string | null>(initialControllerSession?.controlledLightEntityId ?? null);
 
     useEffect(() => {
         if (!groupedLightIds.length) {
             setControlScope('group');
             setControlledLightEntityId(null);
+            controlledLightEntityIdRef.current = null;
             return;
         }
 
-        setControlledLightEntityId((current) =>
-            current && groupedLightIds.includes(current) ? current : groupedLightIds[0]
-        );
+        setControlledLightEntityId((current) => (current && groupedLightIds.includes(current) ? current : null));
     }, [groupedLightIds]);
+
+    useEffect(() => {
+        controlledLightEntityIdRef.current = controlledLightEntityId;
+    }, [controlledLightEntityId]);
 
     const activeEntityId =
         controlScope === 'individual' && controlledLightEntityId ? controlledLightEntityId : entityId;
@@ -110,22 +244,39 @@ export function CardApp({
     const lastSentControlCommand = useRef<QueuedControlCommand[] | null>(null);
     const groupRelativeLayout = useRef<GroupRelativeSnapshot | null>(null);
     const groupRelativeInteractionSnapshot = useRef<GroupRelativeSnapshot | null>(null);
-    const hasExplicitModeSelection = useRef(false);
+    const lastLitGroupRelativeLayout = useRef<GroupRelativeSnapshot | null>(
+        hydrateStoredGroupRelativeLayout(initialControllerSession?.lastLitGroupRelativeLayout ?? null, hass, groupedLightIds)
+    );
+    const lastLitControlSettings = useRef<Record<string, FavoriteSettings>>(
+        initialControllerSession?.lastLitControlSettings ?? {}
+    );
+    const hasExplicitModeSelection = useRef(initialControllerSession?.hasExplicitModeSelection ?? false);
 
     const [hue, setHue] = useState(0);
     const [saturation, setSaturation] = useState(0);
     const [brightness, setBrightness] = useState(50);
     const [kelvin, setKelvin] = useState<number | null>(null);
     const [isOn, setIsOn] = useState(false);
-    const [uiMode, setUiMode] = useState<'temperature' | 'spectrum'>('temperature');
-    const [selectedColorHue, setSelectedColorHue] = useState<number | null>(null);
-    const [padVisualStyle, setPadVisualStyle] = useState<HaloVisualStyle>('plotter');
+    const [uiMode, setUiMode] = useState<'temperature' | 'spectrum'>(initialControllerSession?.uiMode ?? 'temperature');
+    const [selectedColorHue, setSelectedColorHue] = useState<number | null>(
+        initialControllerSession?.selectedColorHue ?? null
+    );
+    const [padVisualStyle, setPadVisualStyle] = useState<HaloVisualStyle>(
+        initialControllerSession?.padVisualStyle ?? 'plotter'
+    );
     const [showPopup, setShowPopup] = useState(false);
     const [isDiscoMode, setIsDiscoMode] = useState(false);
+    const [favoritePresets, setFavoritePresets] = useState(() => loadFavoritePresets(entityId));
+    const [loadedControllerSessionEntityId, setLoadedControllerSessionEntityId] = useState(entityId);
 
     const groupedLights: GroupedLightOption[] = buildGroupedLights(hass, groupedLightIds);
     const isDarkMode = Boolean(hass?.themes?.darkMode);
     const groupedLightIdsKey = groupedLightIds.join('|');
+    const separatedGroupedLightCount = groupedLightIds.length ? countSeparatedGroupedLights(hass, groupedLightIds) : 0;
+    const shouldForceGroupRelative = separatedGroupedLightCount >= 2;
+    const effectiveControlScope: ControlScope = shouldForceGroupRelative ? 'group-relative' : controlScope;
+    const currentControlRestoreKey =
+        effectiveControlScope === 'individual' && controlledLightEntityId ? controlledLightEntityId : entityId;
     const {
         closePopup,
         handlePopupDragEnd,
@@ -139,17 +290,89 @@ export function CardApp({
         popupDragOffset,
     } = usePopupSheet(showPopup, setShowPopup);
 
+    const persistControllerSession = useCallback(() => {
+        if (loadedControllerSessionEntityId !== entityId) return;
+
+        saveControllerSession(entityId, {
+            controlScope: effectiveControlScope,
+            controlledLightEntityId,
+            padVisualStyle,
+            uiMode,
+            selectedColorHue,
+            hasExplicitModeSelection: hasExplicitModeSelection.current,
+            lastLitGroupRelativeLayout: serializeGroupRelativeSnapshot(lastLitGroupRelativeLayout.current),
+            lastLitControlSettings: lastLitControlSettings.current,
+        });
+    }, [
+        controlledLightEntityId,
+        effectiveControlScope,
+        entityId,
+        loadedControllerSessionEntityId,
+        padVisualStyle,
+        selectedColorHue,
+        uiMode,
+    ]);
+
+    const rememberLastLitGroupRelativeLayout = useCallback(
+        (snapshot: GroupRelativeSnapshot | null) => {
+            lastLitGroupRelativeLayout.current = snapshot ? cloneGroupRelativeSnapshot(snapshot) : null;
+            persistControllerSession();
+        },
+        [persistControllerSession]
+    );
+
+    const rememberLastLitControlSettings = useCallback(
+        (targetEntityId: string, settings: FavoriteSettings) => {
+            lastLitControlSettings.current = {
+                ...lastLitControlSettings.current,
+                [targetEntityId]: cloneFavoriteSettings(settings),
+            };
+            persistControllerSession();
+        },
+        [persistControllerSession]
+    );
+
     const groupedLightMarkers: HaloMarker[] = buildGroupedLightMarkers(
         hass,
         groupedLightIds,
         uiMode,
-        controlScope,
+        effectiveControlScope,
         controlledLightEntityId,
-        controlScope === 'group-relative' && groupRelativeLayout.current?.mode === uiMode
+        effectiveControlScope === 'group-relative' && groupRelativeLayout.current?.mode === uiMode
             ? groupRelativeLayout.current
             : null,
         uiMode === 'spectrum' ? selectedColorHue : null
     );
+    const groupRelativeFormationIndicator =
+        effectiveControlScope === 'group-relative' && controlledLightEntityId && groupedLightIds.length
+            ? (() => {
+                  const relativeLayout =
+                      groupRelativeLayout.current?.mode === uiMode
+                          ? groupRelativeLayout.current
+                          : buildGroupRelativeSnapshot(
+                                hass,
+                                groupedLightIds,
+                                uiMode,
+                                uiMode === 'spectrum' ? selectedColorHue : null
+                            );
+
+                  if (!relativeLayout) {
+                      return null;
+                  }
+
+                  return uiMode === 'spectrum' && selectedColorHue != null
+                      ? {
+                            brightness: relativeLayout.averageBrightness,
+                            hue: selectedColorHue,
+                            saturation: Math.round(relativeLayout.averageX * 100),
+                        }
+                      : controlValuesFromPosition(
+                            relativeLayout.averageX,
+                            relativeLayout.averageBrightness,
+                            uiMode
+                        );
+              })()
+            : null;
 
     const buildGroupRelativeLayout = useCallback(() => {
         const snapshot = buildGroupRelativeSnapshot(
@@ -165,8 +388,11 @@ export function CardApp({
         }
 
         groupRelativeLayout.current = snapshot;
+        if (hasLitGroupRelativeMembers(snapshot)) {
+            rememberLastLitGroupRelativeLayout(snapshot);
+        }
         return snapshot;
-    }, [groupedLightIds, hass, selectedColorHue, uiMode]);
+    }, [groupedLightIds, hass, rememberLastLitGroupRelativeLayout, selectedColorHue, uiMode]);
 
     const ensureGroupRelativeLayout = useCallback(() => {
         if (groupRelativeLayout.current?.mode === uiMode) {
@@ -181,8 +407,39 @@ export function CardApp({
     }, [activeEntityId]);
 
     useEffect(() => {
+        const storedFavorites = loadFavoritePresets(entityId);
+        const hydratedFavorites = storedFavorites.filter((favorite) => !hass?.states || favorite.sceneEntityId in hass.states);
+        setFavoritePresets(hydratedFavorites);
+        if (hydratedFavorites.length !== storedFavorites.length) {
+            saveFavoritePresets(entityId, hydratedFavorites);
+        }
+    }, [entityId, hass]);
+
+    useEffect(() => {
+        const storedControllerSession = loadControllerSession(entityId);
+
+        setControlScope(storedControllerSession?.controlScope ?? 'group');
+        setControlledLightEntityId(storedControllerSession?.controlledLightEntityId ?? null);
+        setUiMode(storedControllerSession?.uiMode ?? 'temperature');
+        setSelectedColorHue(storedControllerSession?.selectedColorHue ?? null);
+        setPadVisualStyle(storedControllerSession?.padVisualStyle ?? 'plotter');
+        hasExplicitModeSelection.current = storedControllerSession?.hasExplicitModeSelection ?? false;
+        lastLitControlSettings.current = storedControllerSession?.lastLitControlSettings ?? {};
+        lastLitGroupRelativeLayout.current = hydrateStoredGroupRelativeLayout(
+            storedControllerSession?.lastLitGroupRelativeLayout ?? null,
+            hass,
+            groupedLightIds
+        );
+        setLoadedControllerSessionEntityId(entityId);
+    }, [entityId, groupedLightIdsKey]);
+
+    useEffect(() => {
         hassRef.current = hass;
     }, [hass]);
+
+    useEffect(() => {
+        persistControllerSession();
+    }, [persistControllerSession]);
 
     useEffect(() => {
         return () => {
@@ -217,7 +474,7 @@ export function CardApp({
         }
         discoBatchInFlight.current = false;
         setIsDiscoMode(false);
-    }, [activeEntityId, controlScope]);
+    }, [activeEntityId, effectiveControlScope]);
 
     useEffect(() => {
         groupRelativeLayout.current = null;
@@ -225,29 +482,86 @@ export function CardApp({
     }, [entityId, groupedLightIds.join('|'), uiMode]);
 
     useEffect(() => {
-        if (controlScope === 'group-relative' && groupedLightIds.length) {
+        if (effectiveControlScope === 'group-relative' || !isOn || brightness <= 0) {
+            return;
+        }
+
+        rememberLastLitControlSettings(currentControlRestoreKey, {
+            brightness,
+            hue,
+            isOn: true,
+            kelvin,
+            mode: uiMode,
+            saturation,
+            selectedColorHue,
+        });
+    }, [
+        brightness,
+        currentControlRestoreKey,
+        effectiveControlScope,
+        hue,
+        isOn,
+        kelvin,
+        rememberLastLitControlSettings,
+        saturation,
+        selectedColorHue,
+        uiMode,
+    ]);
+
+    useEffect(() => {
+        if (!groupedLightIds.length || !shouldForceGroupRelative) {
+            return;
+        }
+
+        if (isUserInteracting.current || isDiscoMode) {
+            return;
+        }
+
+        if (controlScope !== 'group-relative') {
+            groupRelativeLayout.current = null;
+            groupRelativeInteractionSnapshot.current = null;
+            setControlScope('group-relative');
+        }
+    }, [controlScope, groupedLightIds.length, isDiscoMode, shouldForceGroupRelative]);
+
+    useEffect(() => {
+        if (effectiveControlScope === 'group-relative' && groupedLightIds.length) {
             const relativeLayout = ensureGroupRelativeLayout();
 
             if (relativeLayout && !isUserInteracting.current && !isDiscoMode) {
+                const selectedRelativeMember =
+                    controlledLightEntityId != null
+                        ? relativeLayout.members.find((member) => member.entityId === controlledLightEntityId) ?? null
+                        : null;
+                const selectedMemberValues =
+                    selectedRelativeMember != null
+                        ? controlValuesFromPosition(selectedRelativeMember.x, selectedRelativeMember.brightness, uiMode)
+                        : null;
+                const selectedOrAverageX = selectedRelativeMember?.x ?? relativeLayout.averageX;
+                const selectedOrAverageBrightness =
+                    selectedRelativeMember?.brightness ?? relativeLayout.averageBrightness;
+
                 setIsOn(relativeLayout.members.some((member) => member.brightness > 0));
-                setHue(uiMode === 'spectrum' && selectedColorHue != null ? selectedColorHue : controlValuesFromPosition(
-                    relativeLayout.averageX,
-                    relativeLayout.averageBrightness,
-                    uiMode
-                ).hue);
+                setHue(
+                    uiMode === 'spectrum' && selectedColorHue != null
+                        ? selectedColorHue
+                        : selectedMemberValues?.hue ??
+                              controlValuesFromPosition(relativeLayout.averageX, relativeLayout.averageBrightness, uiMode).hue
+                );
                 setSaturation(
                     uiMode === 'spectrum' && selectedColorHue != null
-                        ? Math.round(relativeLayout.averageX * 100)
-                        : controlValuesFromPosition(relativeLayout.averageX, relativeLayout.averageBrightness, uiMode)
-                              .saturation
+                        ? Math.round(selectedOrAverageX * 100)
+                        : selectedMemberValues?.saturation ??
+                              controlValuesFromPosition(relativeLayout.averageX, relativeLayout.averageBrightness, uiMode)
+                                  .saturation
                 );
-                setBrightness(relativeLayout.averageBrightness);
-                setKelvin(uiMode === 'temperature' ? kelvinFromXPosition(relativeLayout.averageX, groupLight ?? light) : null);
+                setBrightness(selectedOrAverageBrightness);
+                setKelvin(uiMode === 'temperature' ? kelvinFromXPosition(selectedOrAverageX, groupLight ?? light) : null);
             }
             return;
         }
 
-        if (groupedLightIds.length && controlScope !== 'individual' && groupLight) {
+        if (groupedLightIds.length && effectiveControlScope !== 'individual' && groupLight) {
             const aggregate = buildGroupedAggregateControlState(
                 hass,
                 groupedLightIds,
@@ -345,13 +659,14 @@ export function CardApp({
         });
     }, [
         activeEntityId,
-        controlScope,
+        effectiveControlScope,
         ensureGroupRelativeLayout,
         groupLight,
         groupedLightIds,
         hass,
         isDiscoMode,
         light,
+        controlledLightEntityId,
         supportsSpectrum,
         supportsTemperature,
         selectedColorHue,
@@ -601,13 +916,13 @@ export function CardApp({
             interactionTimeout.current = null;
         }
 
-        if (controlScope === 'group-relative') {
+        if (effectiveControlScope === 'group-relative') {
             groupRelativeInteractionSnapshot.current = ensureGroupRelativeLayout();
         } else {
             groupRelativeInteractionSnapshot.current = null;
             groupRelativeLayout.current = null;
         }
-    }, [controlScope, ensureGroupRelativeLayout]);
+    }, [effectiveControlScope, ensureGroupRelativeLayout]);
 
     const handleControlsChange = useCallback(
         (nextHue: number, nextSaturation: number, nextBrightness: number) => {
@@ -623,26 +938,47 @@ export function CardApp({
                 setKelvin(null);
             }
 
-            if (controlScope === 'group-relative' && groupedLightIds.length) {
+            if (effectiveControlScope === 'group-relative' && groupedLightIds.length) {
                 const snapshot = groupRelativeInteractionSnapshot.current ?? ensureGroupRelativeLayout();
                 if (!snapshot) return;
 
                 const nextX = xFractionFromHueSat(nextHue, nextSaturation, uiMode);
-                const deltaX = nextX - snapshot.averageX;
-                const deltaBrightness = nextBrightness - snapshot.averageBrightness;
+                const selectedRelativeLightEntityId = controlledLightEntityIdRef.current;
+                const nextRelativeLayoutMembers = selectedRelativeLightEntityId
+                    ? snapshot.members.map((member) =>
+                          member.entityId === selectedRelativeLightEntityId
+                              ? {
+                                    ...member,
+                                    x: nextX,
+                                    brightness: nextBrightness,
+                                }
+                              : member
+                      )
+                    : (() => {
+                          const deltaX = nextX - snapshot.averageX;
+                          const deltaBrightness = nextBrightness - snapshot.averageBrightness;
+                          return snapshot.members.map((member) => ({
+                              ...member,
+                              x: member.x + deltaX,
+                              brightness: member.brightness + deltaBrightness,
+                          }));
+                      })();
 
                 const nextRelativeLayout: GroupRelativeSnapshot = {
                     mode: uiMode,
-                    averageX: snapshot.averageX + deltaX,
-                    averageBrightness: snapshot.averageBrightness + deltaBrightness,
-                    members: snapshot.members.map((member) => ({
-                        ...member,
-                        x: member.x + deltaX,
-                        brightness: member.brightness + deltaBrightness,
-                    })),
+                    averageX:
+                        nextRelativeLayoutMembers.reduce((total, member) => total + member.x, 0) /
+                        nextRelativeLayoutMembers.length,
+                    averageBrightness:
+                        nextRelativeLayoutMembers.reduce((total, member) => total + member.brightness, 0) /
+                        nextRelativeLayoutMembers.length,
+                    members: nextRelativeLayoutMembers,
                 };
 
                 groupRelativeLayout.current = nextRelativeLayout;
+                if (hasLitGroupRelativeMembers(nextRelativeLayout)) {
+                    rememberLastLitGroupRelativeLayout(nextRelativeLayout);
+                }
 
                 const relativeCommands = nextRelativeLayout.members.map((member) =>
                     buildQueuedControlCommand(
@@ -672,7 +1008,8 @@ export function CardApp({
         },
         [
             beginControlInteraction,
-            controlScope,
+            controlledLightEntityId,
+            effectiveControlScope,
             ensureGroupRelativeLayout,
             groupedLightIds,
             hass,
@@ -680,6 +1017,7 @@ export function CardApp({
             queueControlCommand,
             stopDiscoMode,
             uiMode,
+            rememberLastLitGroupRelativeLayout,
         ]
     );
 
@@ -746,31 +1084,205 @@ export function CardApp({
         endControlInteraction();
     }, [endControlInteraction, flushQueuedControlCommand]);
 
+    const restoreRememberedControllerState = useCallback(
+        (restoreScope: ControlScope, restoreEntityId: string | null) => {
+            if (restoreScope === 'group-relative' && groupedLightIds.length) {
+                const restoreLayout = lastLitGroupRelativeLayout.current;
+                if (restoreLayout && hasLitGroupRelativeMembers(restoreLayout)) {
+                    const restoredLayout = cloneGroupRelativeSnapshot(restoreLayout);
+                    const restoredValues = controlValuesFromPosition(
+                        restoredLayout.averageX,
+                        restoredLayout.averageBrightness,
+                        restoredLayout.mode
+                    );
+
+                    groupRelativeLayout.current = restoredLayout;
+                    groupRelativeInteractionSnapshot.current = null;
+                    setControlScope('group-relative');
+                    controlledLightEntityIdRef.current = null;
+                    setControlledLightEntityId(null);
+                    setIsOn(true);
+                    setUiMode(restoredLayout.mode);
+                    setBrightness(restoredLayout.averageBrightness);
+
+                    if (restoredLayout.mode === 'spectrum') {
+                        const restoredHue = Math.round(restoredLayout.averageX * 360);
+                        setSelectedColorHue(restoredHue);
+                        setHue(restoredHue);
+                        setSaturation(Math.round(restoredLayout.averageX * 100));
+                        setKelvin(null);
+                        hasExplicitModeSelection.current = true;
+                    } else {
+                        setSelectedColorHue(null);
+                        setHue(restoredValues.hue);
+                        setSaturation(restoredValues.saturation);
+                        setKelvin(kelvinFromXPosition(restoredLayout.averageX, groupLight ?? light));
+                        hasExplicitModeSelection.current = false;
+                    }
+
+                    const restoreCommands = restoredLayout.members.map((member) =>
+                        buildQueuedControlCommand(
+                            member.entityId,
+                            getLightState(hass, member.entityId) ?? member.light,
+                            controlValuesFromPosition(member.x, member.brightness, restoredLayout.mode),
+                            restoredLayout.mode
+                        )
+                    );
+
+                    queueControlCommand(restoreCommands);
+                    flushQueuedControlCommand(true);
+                    return true;
+                }
+            }
+
+            const targetEntityId = restoreScope === 'individual' && restoreEntityId ? restoreEntityId : entityId;
+            const restoreSettings = lastLitControlSettings.current[targetEntityId];
+            const targetLight =
+                getLightState(hass, targetEntityId) ??
+                (restoreScope === 'group' ? groupLight ?? light : light ?? groupLight);
+
+            if (!restoreSettings || !targetLight) {
+                return false;
+            }
+
+            const restoredBrightness = Math.max(1, restoreSettings.brightness);
+            setControlScope(restoreScope);
+            if (restoreScope === 'individual') {
+                setControlledLightEntityId(targetEntityId);
+            }
+            setIsOn(true);
+            setUiMode(restoreSettings.mode);
+            setSelectedColorHue(restoreSettings.selectedColorHue);
+            setHue(restoreSettings.hue);
+            setSaturation(restoreSettings.saturation);
+            setBrightness(restoredBrightness);
+            setKelvin(restoreSettings.mode === 'temperature' ? restoreSettings.kelvin : null);
+            hasExplicitModeSelection.current =
+                restoreSettings.mode === 'spectrum' && restoreSettings.selectedColorHue != null;
+
+            const restoreCommand = buildQueuedControlCommand(
+                targetEntityId,
+                restoreScope === 'group' ? (groupLight ?? targetLight) : targetLight,
+                {
+                    brightness: restoredBrightness,
+                    hue: restoreSettings.hue,
+                    saturation: restoreSettings.saturation,
+                },
+                restoreSettings.mode
+            );
+
+            queueControlCommand([restoreCommand]);
+            flushQueuedControlCommand(true);
+            return true;
+        },
+        [entityId, flushQueuedControlCommand, groupLight, groupedLightIds.length, hass, light, queueControlCommand]
+    );
+
     const handleToggle = useCallback(() => {
         stopDiscoMode();
         const nextState = !isOn;
+        const currentRelativeLayout = effectiveControlScope === 'group-relative' ? ensureGroupRelativeLayout() : null;
+        if (!nextState && currentRelativeLayout && hasLitGroupRelativeMembers(currentRelativeLayout)) {
+            rememberLastLitGroupRelativeLayout(currentRelativeLayout);
+        } else if (!nextState && effectiveControlScope !== 'group-relative' && brightness > 0) {
+            rememberLastLitControlSettings(currentControlRestoreKey, {
+                brightness,
+                hue,
+                isOn: true,
+                kelvin,
+                mode: uiMode,
+                saturation,
+                selectedColorHue,
+            });
+        }
         setIsOn(nextState);
         markInteraction(1000);
         groupRelativeLayout.current = null;
         groupRelativeInteractionSnapshot.current = null;
+        if (!nextState && effectiveControlScope === 'group-relative') {
+            controlledLightEntityIdRef.current = null;
+            setControlledLightEntityId(null);
+        }
+
+        if (nextState && restoreRememberedControllerState(effectiveControlScope, controlledLightEntityId)) {
+            return;
+        }
 
         const targetEntityId =
-            controlScope === 'individual' && controlledLightEntityId ? controlledLightEntityId : entityId;
-
+            effectiveControlScope === 'individual' && controlledLightEntityId ? controlledLightEntityId : entityId;
         callLightService(hass, targetEntityId, nextState);
-    }, [controlScope, controlledLightEntityId, entityId, hass, isOn, markInteraction, stopDiscoMode]);
+    }, [
+        brightness,
+        controlledLightEntityId,
+        currentControlRestoreKey,
+        effectiveControlScope,
+        ensureGroupRelativeLayout,
+        entityId,
+        hass,
+        hue,
+        isOn,
+        kelvin,
+        markInteraction,
+        rememberLastLitControlSettings,
+        rememberLastLitGroupRelativeLayout,
+        restoreRememberedControllerState,
+        saturation,
+        selectedColorHue,
+        stopDiscoMode,
+        uiMode,
+    ]);
 
     const handleCompactToggle = useCallback(() => {
-        if (!groupLight) return;
+        const toggleTargetEntityId =
+            effectiveControlScope === 'individual' && controlledLightEntityId ? controlledLightEntityId : entityId;
+        const toggleTargetLight =
+            getLightState(hass, toggleTargetEntityId) ??
+            (effectiveControlScope === 'group' ? groupLight : light ?? groupLight);
+        if (!toggleTargetLight) return;
 
         stopDiscoMode();
-        const nextState = groupLight.state !== 'on';
+        const nextState = toggleTargetLight.state !== 'on';
+        if (!nextState) {
+            if (effectiveControlScope === 'group-relative') {
+                const currentRelativeLayout = ensureGroupRelativeLayout();
+                if (currentRelativeLayout && hasLitGroupRelativeMembers(currentRelativeLayout)) {
+                    rememberLastLitGroupRelativeLayout(currentRelativeLayout);
+                }
+            } else {
+                const currentTargetSettings = buildFavoriteSettingsFromLightState(toggleTargetLight);
+                if (currentTargetSettings?.isOn && currentTargetSettings.brightness > 0) {
+                    rememberLastLitControlSettings(toggleTargetEntityId, currentTargetSettings);
+                }
+            }
+        }
         setIsOn(nextState);
         markInteraction(1000);
         groupRelativeLayout.current = null;
         groupRelativeInteractionSnapshot.current = null;
-        callLightService(hass, entityId, nextState);
-    }, [entityId, groupLight, hass, markInteraction, stopDiscoMode]);
+        if (!nextState && effectiveControlScope === 'group-relative') {
+            controlledLightEntityIdRef.current = null;
+            setControlledLightEntityId(null);
+        }
+
+        if (nextState && restoreRememberedControllerState(effectiveControlScope, controlledLightEntityId)) {
+            return;
+        }
+
+        callLightService(hass, toggleTargetEntityId, nextState);
+    }, [
+        controlledLightEntityId,
+        entityId,
+        ensureGroupRelativeLayout,
+        effectiveControlScope,
+        groupLight,
+        hass,
+        light,
+        markInteraction,
+        rememberLastLitControlSettings,
+        rememberLastLitGroupRelativeLayout,
+        restoreRememberedControllerState,
+        stopDiscoMode,
+    ]);
 
     const handleModeChange = useCallback(
         (mode: 'temperature' | 'spectrum') => {
@@ -788,113 +1300,6 @@ export function CardApp({
         [clearInteractionLock, stopDiscoMode, supportsSpectrum, supportsTemperature]
     );
 
-    const handleColorSelect = useCallback(
-        (nextHue: number) => {
-            stopDiscoMode();
-            beginControlInteraction();
-            hasExplicitModeSelection.current = true;
-            setSelectedColorHue(nextHue);
-            setUiMode('spectrum');
-            const currentX =
-                uiMode === 'spectrum' && selectedColorHue != null
-                    ? Math.max(0, Math.min(1, saturation / 100))
-                    : xFractionFromHueSat(hue, saturation, uiMode);
-            const lockedSaturation = Math.round(currentX * 100);
-
-            if (controlScope === 'group-relative' && groupedLightIds.length) {
-                const snapshot = groupRelativeInteractionSnapshot.current ?? ensureGroupRelativeLayout();
-                if (!snapshot) {
-                    return;
-                }
-
-                const nextRelativeLayout: GroupRelativeSnapshot = {
-                    mode: 'spectrum',
-                    averageX: snapshot.averageX,
-                    averageBrightness: snapshot.averageBrightness,
-                    members: snapshot.members.map((member) => ({
-                        ...member,
-                    })),
-                };
-
-                groupRelativeLayout.current = nextRelativeLayout;
-                groupRelativeInteractionSnapshot.current = nextRelativeLayout;
-
-                setIsOn(nextRelativeLayout.members.some((member) => member.brightness > 0));
-                setHue(nextHue);
-                setSaturation(Math.round(nextRelativeLayout.averageX * 100));
-                setBrightness(nextRelativeLayout.averageBrightness);
-                setKelvin(null);
-
-                const relativeCommands = nextRelativeLayout.members.map((member) =>
-                    buildQueuedControlCommand(
-                        member.entityId,
-                        member.light,
-                        {
-                            brightness: member.brightness,
-                            hue: nextHue,
-                            saturation: Math.round(member.x * 100),
-                        },
-                        'spectrum'
-                    )
-                );
-
-                queueControlCommand(relativeCommands);
-                flushQueuedControlCommand(true);
-                markInteraction(900);
-                return;
-            }
-
-            const nextBrightness = Math.max(1, brightness);
-            const targetEntityId =
-                controlScope === 'individual' && controlledLightEntityId ? controlledLightEntityId : entityId;
-            const targetLight = getLightState(hass, targetEntityId) ?? light ?? groupLight;
-            if (!targetLight) return;
-
-            groupRelativeLayout.current = null;
-            groupRelativeInteractionSnapshot.current = null;
-            setIsOn(true);
-            setHue(nextHue);
-            setSaturation(lockedSaturation);
-            setBrightness(nextBrightness);
-            setKelvin(null);
-
-            const nextCommand = buildQueuedControlCommand(
-                controlScope === 'group-relative' ? entityId : targetEntityId,
-                controlScope === 'group-relative' ? (groupLight ?? targetLight) : targetLight,
-                {
-                    brightness: nextBrightness,
-                    hue: nextHue,
-                    saturation: lockedSaturation,
-                },
-                'spectrum'
-            );
-
-            queueControlCommand([nextCommand]);
-            flushQueuedControlCommand(true);
-            markInteraction(900);
-        },
-        [
-            brightness,
-            beginControlInteraction,
-            controlScope,
-            controlledLightEntityId,
-            entityId,
-            ensureGroupRelativeLayout,
-            flushQueuedControlCommand,
-            groupLight,
-            groupedLightIds.length,
-            hass,
-            hue,
-            light,
-            markInteraction,
-            queueControlCommand,
-            selectedColorHue,
-            saturation,
-            stopDiscoMode,
-            uiMode,
-        ]
-    );
-
     const handleTap = useCallback(() => {
         if (onTapAction) {
             onTapAction();
@@ -906,12 +1311,415 @@ export function CardApp({
         }
     }, [onTapAction, resolvedLayout]);
 
+    const buildFavoriteSettingsFromLight = useCallback(
+        (targetLight: ReturnType<typeof getLightState>) => buildFavoriteSettingsFromLightState(targetLight),
+        []
+    );
+
+    const currentFavoriteSettings: FavoriteSettings = {
+        brightness,
+        hue,
+        isOn,
+        kelvin,
+        mode: uiMode,
+        saturation,
+        selectedColorHue,
+    };
+    const builtinFavoritePresets = buildBuiltinFavoritePresets(new Date(), hass?.states?.['sun.sun']);
+
+    const activeFavoriteId =
+        favoritePresets.find((favorite) => {
+            if (favorite.scope === 'individual') {
+                const liveSettings = buildFavoriteSettingsFromLight(getLightState(hass, favorite.entityId));
+                return liveSettings ? favoriteSettingsMatch(favorite.settings, liveSettings) : false;
+            }
+
+            return favorite.members.every((member) => {
+                const liveSettings = buildFavoriteSettingsFromLight(getLightState(hass, member.entityId));
+                return liveSettings ? favoriteSettingsMatch(member.settings, liveSettings) : false;
+            });
+        })?.id ??
+        builtinFavoritePresets.find((favorite) => favoriteSettingsMatch(favorite.settings, currentFavoriteSettings))?.id ??
+        null;
+
+    const handleBuiltinFavoriteApply = useCallback(
+        (favoriteId: string) => {
+            const favorite = builtinFavoritePresets.find((candidate) => candidate.id === favoriteId);
+            if (!favorite) return;
+
+            stopDiscoMode();
+            clearInteractionLock();
+            groupRelativeInteractionSnapshot.current = null;
+            markInteraction(900);
+
+            const targetSettings = favorite.settings;
+            const targetBrightness = Math.max(0, targetSettings.brightness);
+            const targetX = xFractionFromHueSat(targetSettings.hue, targetSettings.saturation, targetSettings.mode);
+            hasExplicitModeSelection.current =
+                targetSettings.mode === 'spectrum' && targetSettings.selectedColorHue != null;
+
+            setIsOn(targetSettings.isOn);
+            setUiMode(targetSettings.mode);
+            setSelectedColorHue(targetSettings.selectedColorHue);
+            setHue(targetSettings.hue);
+            setSaturation(targetSettings.saturation);
+            setBrightness(targetBrightness);
+            setKelvin(targetSettings.mode === 'temperature' ? targetSettings.kelvin : null);
+
+            if (effectiveControlScope === 'group-relative' && groupedLightIds.length) {
+                const snapshot =
+                    buildGroupRelativeSnapshot(
+                        hass,
+                        groupedLightIds,
+                        targetSettings.mode,
+                        targetSettings.mode === 'spectrum' ? targetSettings.selectedColorHue : null
+                    ) ?? ensureGroupRelativeLayout();
+
+                if (snapshot) {
+                    const deltaX = targetX - snapshot.averageX;
+                    const deltaBrightness = targetBrightness - snapshot.averageBrightness;
+                    const nextRelativeLayout: GroupRelativeSnapshot = {
+                        mode: targetSettings.mode,
+                        averageX: targetX,
+                        averageBrightness: targetBrightness,
+                        members: snapshot.members.map((member) => ({
+                            ...member,
+                            x: member.x + deltaX,
+                            brightness: member.brightness + deltaBrightness,
+                        })),
+                    };
+
+                    groupRelativeLayout.current = nextRelativeLayout;
+                    if (hasLitGroupRelativeMembers(nextRelativeLayout)) {
+                        rememberLastLitGroupRelativeLayout(nextRelativeLayout);
+                    }
+
+                    const relativeCommands = nextRelativeLayout.members.map((member) =>
+                        buildQueuedControlCommand(
+                            member.entityId,
+                            member.light,
+                            controlValuesFromPosition(member.x, member.brightness, targetSettings.mode),
+                            targetSettings.mode
+                        )
+                    );
+
+                    queueControlCommand(relativeCommands);
+                    flushQueuedControlCommand(true);
+                    return;
+                }
+            }
+
+            const targetEntityId =
+                effectiveControlScope === 'individual' && controlledLightEntityId ? controlledLightEntityId : entityId;
+            const targetLight =
+                getLightState(hass, targetEntityId) ??
+                (effectiveControlScope === 'group' ? groupLight ?? light : light ?? groupLight);
+
+            if (!targetLight) return;
+
+            if (targetBrightness > 0) {
+                rememberLastLitControlSettings(targetEntityId, {
+                    ...targetSettings,
+                    brightness: targetBrightness,
+                    isOn: true,
+                });
+            }
+
+            const nextCommand = buildQueuedControlCommand(
+                targetEntityId,
+                effectiveControlScope === 'group' ? (groupLight ?? targetLight) : targetLight,
+                {
+                    brightness: targetBrightness,
+                    hue: targetSettings.hue,
+                    saturation: targetSettings.saturation,
+                },
+                targetSettings.mode
+            );
+
+            queueControlCommand([nextCommand]);
+            flushQueuedControlCommand(true);
+        },
+        [
+            builtinFavoritePresets,
+            clearInteractionLock,
+            controlledLightEntityId,
+            entityId,
+            ensureGroupRelativeLayout,
+            effectiveControlScope,
+            flushQueuedControlCommand,
+            groupLight,
+            groupedLightIds,
+            hass,
+            light,
+            markInteraction,
+            queueControlCommand,
+            rememberLastLitControlSettings,
+            rememberLastLitGroupRelativeLayout,
+            stopDiscoMode,
+        ]
+    );
+
+    const handleFavoriteSave = useCallback(() => {
+        void (async () => {
+            let nextFavorite;
+            let snapshotEntities: string[] = [];
+
+            if (effectiveControlScope === 'individual' && controlledLightEntityId) {
+                const targetSettings = buildFavoriteSettingsFromLight(getLightState(hass, controlledLightEntityId));
+                if (!targetSettings) {
+                    return;
+                }
+
+                nextFavorite = createIndividualFavoritePreset(controlledLightEntityId, targetSettings);
+                snapshotEntities = [controlledLightEntityId];
+            } else {
+                const memberPresets: FavoriteMemberPreset[] = groupedLightIds
+                    .map((memberEntityId) => {
+                        const memberLight = getLightState(hass, memberEntityId);
+                        const memberSettings = buildFavoriteSettingsFromLight(memberLight);
+                        if (!memberLight || !memberSettings) return null;
+
+                        const memberPreset: FavoriteMemberPreset = {
+                            entityId: memberEntityId,
+                            settings: memberSettings,
+                        };
+
+                        if (memberLight.attributes.friendly_name) {
+                            memberPreset.name = memberLight.attributes.friendly_name;
+                        }
+
+                        return memberPreset;
+                    })
+                    .filter((member): member is FavoriteMemberPreset => member !== null);
+
+                if (memberPresets.length) {
+                    nextFavorite = createGroupFavoritePreset(entityId, currentFavoriteSettings, memberPresets);
+                    snapshotEntities = memberPresets.map((member) => member.entityId);
+                } else {
+                    const targetSettings = buildFavoriteSettingsFromLight(groupLight ?? light);
+                    if (!targetSettings) {
+                        return;
+                    }
+
+                    nextFavorite = createIndividualFavoritePreset(entityId, targetSettings);
+                    snapshotEntities = [entityId];
+                }
+            }
+
+            const nextFavorites = appendFavoritePreset(favoritePresets, nextFavorite);
+            const removedFavorites = favoritePresets.filter(
+                (favorite) => !nextFavorites.some((candidate) => candidate.id === favorite.id)
+            );
+
+            try {
+                await createSceneSnapshot(hass, nextFavorite.sceneEntityId, snapshotEntities);
+                await Promise.all(removedFavorites.map((favorite) => deleteScene(hass, favorite.sceneEntityId)));
+                setFavoritePresets(nextFavorites);
+                saveFavoritePresets(entityId, nextFavorites);
+            } catch (error) {
+                console.error('[Dual Halo Controller] Failed to save favourite in Home Assistant', {
+                    entityId,
+                    nextFavorite,
+                    error,
+                });
+            }
+        })();
+    }, [
+        buildFavoriteSettingsFromLight,
+        controlledLightEntityId,
+        currentFavoriteSettings,
+        entityId,
+        effectiveControlScope,
+        favoritePresets,
+        groupLight,
+        groupedLightIds,
+        hass,
+        light,
+    ]);
+
+    const handleFavoriteDelete = useCallback(
+        (favoriteId: string) => {
+            void (async () => {
+                const favoriteToDelete = favoritePresets.find((favorite) => favorite.id === favoriteId);
+                if (!favoriteToDelete) return;
+
+                const nextFavorites = favoritePresets.filter((favorite) => favorite.id !== favoriteId);
+
+                try {
+                    await deleteScene(hass, favoriteToDelete.sceneEntityId);
+                } catch (error) {
+                    console.error('[Dual Halo Controller] Failed to delete favourite scene', {
+                        entityId,
+                        favoriteId,
+                        sceneEntityId: favoriteToDelete.sceneEntityId,
+                        error,
+                    });
+                }
+
+                setFavoritePresets(nextFavorites);
+                saveFavoritePresets(entityId, nextFavorites);
+            })();
+        },
+        [entityId, favoritePresets, hass]
+    );
+
+    const handleFavoriteEditCommit = useCallback(
+        (favoriteIdsToDelete: string[], shouldSaveCurrent: boolean) => {
+            void (async () => {
+                const deletions = new Set(favoriteIdsToDelete);
+                let nextFavorites = favoritePresets.filter((favorite) => !deletions.has(favorite.id));
+                const deletedFavorites = favoritePresets.filter((favorite) => deletions.has(favorite.id));
+                let nextFavorite: FavoritePreset | null = null;
+                let snapshotEntities: string[] = [];
+
+                if (shouldSaveCurrent) {
+                    if (effectiveControlScope === 'individual' && controlledLightEntityId) {
+                        const targetSettings = buildFavoriteSettingsFromLight(getLightState(hass, controlledLightEntityId));
+                        if (targetSettings) {
+                            nextFavorite = createIndividualFavoritePreset(controlledLightEntityId, targetSettings);
+                            snapshotEntities = [controlledLightEntityId];
+                        }
+                    } else {
+                        const memberPresets: FavoriteMemberPreset[] = groupedLightIds
+                            .map((memberEntityId) => {
+                                const memberLight = getLightState(hass, memberEntityId);
+                                const memberSettings = buildFavoriteSettingsFromLight(memberLight);
+                                if (!memberLight || !memberSettings) return null;
+
+                                const memberPreset: FavoriteMemberPreset = {
+                                    entityId: memberEntityId,
+                                    settings: memberSettings,
+                                };
+
+                                if (memberLight.attributes.friendly_name) {
+                                    memberPreset.name = memberLight.attributes.friendly_name;
+                                }
+
+                                return memberPreset;
+                            })
+                            .filter((member): member is FavoriteMemberPreset => member !== null);
+
+                        if (memberPresets.length) {
+                            nextFavorite = createGroupFavoritePreset(entityId, currentFavoriteSettings, memberPresets);
+                            snapshotEntities = memberPresets.map((member) => member.entityId);
+                        } else {
+                            const targetSettings = buildFavoriteSettingsFromLight(groupLight ?? light);
+                            if (targetSettings) {
+                                nextFavorite = createIndividualFavoritePreset(entityId, targetSettings);
+                                snapshotEntities = [entityId];
+                            }
+                        }
+                    }
+
+                    if (nextFavorite) {
+                        nextFavorites = appendFavoritePreset(nextFavorites, nextFavorite);
+                    }
+                }
+
+                const removedFavorites = favoritePresets.filter(
+                    (favorite) => !nextFavorites.some((candidate) => candidate.id === favorite.id)
+                );
+
+                try {
+                    if (nextFavorite) {
+                        await createSceneSnapshot(hass, nextFavorite.sceneEntityId, snapshotEntities);
+                    }
+                    await Promise.all(
+                        removedFavorites.map((favorite) => deleteScene(hass, favorite.sceneEntityId))
+                    );
+                    setFavoritePresets(nextFavorites);
+                    saveFavoritePresets(entityId, nextFavorites);
+                } catch (error) {
+                    console.error('[Dual Halo Controller] Failed to commit favourite edits', {
+                        entityId,
+                        favoriteIdsToDelete,
+                        shouldSaveCurrent,
+                        deletedFavorites,
+                        nextFavorite,
+                        error,
+                    });
+                }
+            })();
+        },
+        [
+            buildFavoriteSettingsFromLight,
+            controlledLightEntityId,
+            currentFavoriteSettings,
+            entityId,
+            effectiveControlScope,
+            favoritePresets,
+            groupLight,
+            groupedLightIds,
+            hass,
+            light,
+        ]
+    );
+
+    const handleFavoriteApply = useCallback(
+        (favoriteId: string) => {
+            const favorite = favoritePresets.find((candidate) => candidate.id === favoriteId);
+            if (!favorite) return;
+
+            stopDiscoMode();
+            clearInteractionLock();
+            hasExplicitModeSelection.current =
+                favorite.settings.mode === 'spectrum' && favorite.settings.selectedColorHue != null;
+            groupRelativeInteractionSnapshot.current = null;
+            groupRelativeLayout.current = null;
+
+            setUiMode(favorite.settings.mode);
+            setSelectedColorHue(favorite.settings.selectedColorHue);
+            setIsOn(favorite.settings.isOn);
+            setHue(favorite.settings.hue);
+            setSaturation(favorite.settings.saturation);
+            setBrightness(favorite.settings.brightness);
+            setKelvin(favorite.settings.mode === 'temperature' ? favorite.settings.kelvin : null);
+            markInteraction(900);
+            if (favorite.scope === 'group') {
+                activeEntityIdRef.current = entityId;
+                setControlScope('group');
+                setControlledLightEntityId(null);
+            } else {
+                activeEntityIdRef.current = favorite.entityId;
+                setControlScope('individual');
+                setControlledLightEntityId(favorite.entityId);
+            }
+
+            void activateScene(hass, favorite.sceneEntityId).catch((error) => {
+                console.error('[Dual Halo Controller] Failed to activate favourite scene', {
+                    entityId,
+                    favoriteId,
+                    sceneEntityId: favorite.sceneEntityId,
+                    error,
+                });
+            });
+        },
+        [clearInteractionLock, entityId, favoritePresets, hass, markInteraction, stopDiscoMode]
+    );
+
     const handleGroupedLightSelect = useCallback((nextEntityId: string) => {
         activeEntityIdRef.current = nextEntityId;
         stopDiscoMode();
+
+        if (controlScope === 'group-relative' || shouldForceGroupRelative) {
+            setControlScope('group-relative');
+            controlledLightEntityIdRef.current = nextEntityId;
+            setControlledLightEntityId(nextEntityId);
+            return;
+        }
+
         setControlScope('individual');
+        controlledLightEntityIdRef.current = nextEntityId;
         setControlledLightEntityId(nextEntityId);
-    }, [stopDiscoMode]);
+    }, [controlScope, shouldForceGroupRelative, stopDiscoMode]);
+
+    const handleGroupRelativeFormationSelect = useCallback(() => {
+        stopDiscoMode();
+        activeEntityIdRef.current = entityId;
+        setControlScope('group-relative');
+        controlledLightEntityIdRef.current = null;
+        setControlledLightEntityId(null);
+    }, [entityId, stopDiscoMode]);
 
     const handleGroupedLightToggle = useCallback(
         (nextEntityId: string) => {
@@ -929,8 +1737,12 @@ export function CardApp({
 
     const handleControlScopeChange = useCallback((nextScope: 'group' | 'group-relative') => {
         stopDiscoMode();
-        if (nextScope === 'group-relative') {
+        const resolvedNextScope = shouldForceGroupRelative ? 'group-relative' : nextScope;
+
+        if (resolvedNextScope === 'group-relative') {
             const relativeLayout = ensureGroupRelativeLayout();
+            controlledLightEntityIdRef.current = null;
+            setControlledLightEntityId(null);
             if (relativeLayout) {
                 setIsOn(relativeLayout.members.some((member) => member.brightness > 0));
                 if (uiMode === 'spectrum' && selectedColorHue != null) {
@@ -950,8 +1762,8 @@ export function CardApp({
             }
         }
 
-        setControlScope(nextScope);
-    }, [ensureGroupRelativeLayout, groupLight, light, selectedColorHue, stopDiscoMode, uiMode]);
+        setControlScope(resolvedNextScope);
+    }, [ensureGroupRelativeLayout, groupLight, light, selectedColorHue, shouldForceGroupRelative, stopDiscoMode, uiMode]);
 
     if (!groupLight) {
         return (
@@ -994,23 +1806,14 @@ export function CardApp({
         uiMode,
         lightName,
         groupedLights,
-        controlScope,
+        controlScope: effectiveControlScope,
         controlledLightEntityId,
     });
-    const expandedAreaName = deriveAreaLabel(
-        groupedLightIds.length ? groupLight?.attributes.friendly_name : light?.attributes.friendly_name || lightName,
-        entityId,
-        ((light?.attributes as { area_name?: string } | undefined)?.area_name ??
-            (groupLight?.attributes as { area_name?: string } | undefined)?.area_name) ||
-            null
-    );
     const expandedCardProps = {
         isDarkMode,
         lightName,
-        expandedAreaName,
         expandedPrimaryName,
         expandedSecondaryName,
-        icon,
         isOn,
         hue,
         saturation,
@@ -1022,7 +1825,6 @@ export function CardApp({
         onModeChange: handleModeChange,
         onControlsChange: handleControlsChange,
         selectedColorHue,
-        onColorSelect: handleColorSelect,
         padVisualStyle,
         onPadVisualStyleChange: setPadVisualStyle,
         onControlInteractionStart: beginControlInteraction,
@@ -1030,12 +1832,22 @@ export function CardApp({
         isDiscoMode,
         onDiscoModeTrigger: startDiscoMode,
         onDiscoModeExit: stopDiscoMode,
+        favoritePresets,
+        builtinFavoritePresets,
+        activeFavoriteId,
+        onFavoriteSave: handleFavoriteSave,
+        onFavoriteDelete: handleFavoriteDelete,
+        onBuiltinFavoriteApply: handleBuiltinFavoriteApply,
+        onFavoriteEditCommit: handleFavoriteEditCommit,
+        onFavoriteApply: handleFavoriteApply,
         onPadMarkerSelect: groupedLights.length ? handleGroupedLightSelect : undefined,
+        onFormationIndicatorSelect: handleGroupRelativeFormationSelect,
         onPadDoubleSelect: handlePadDoubleSelect,
         onToggle: handleToggle,
         groupedLights,
         groupedLightMarkers,
-        controlScope,
+        groupRelativeFormationIndicator,
+        controlScope: effectiveControlScope,
         controlledLightEntityId,
         onControlScopeChange: handleControlScopeChange,
         onGroupedLightSelect: handleGroupedLightSelect,
@@ -1048,10 +1860,8 @@ export function CardApp({
                 layout={resolvedLayout}
                 isDarkMode={isDarkMode}
                 lightName={resolvedLayout === 'compact' ? compactLightName : lightName}
-                expandedAreaName={resolvedLayout === 'compact' ? null : expandedAreaName}
                 expandedPrimaryName={resolvedLayout === 'compact' ? undefined : expandedPrimaryName}
                 expandedSecondaryName={resolvedLayout === 'compact' ? null : expandedSecondaryName}
-                icon={icon}
                 isOn={resolvedLayout === 'compact' ? compactIsOn : isOn}
                 hue={resolvedLayout === 'compact' ? compactHue : hue}
                 saturation={resolvedLayout === 'compact' ? compactSaturation : saturation}
@@ -1063,7 +1873,6 @@ export function CardApp({
                 onModeChange={handleModeChange}
                 onControlsChange={handleControlsChange}
                 selectedColorHue={selectedColorHue}
-                onColorSelect={handleColorSelect}
                 padVisualStyle={padVisualStyle}
                 onPadVisualStyleChange={setPadVisualStyle}
                 onControlInteractionStart={beginControlInteraction}
@@ -1072,11 +1881,21 @@ export function CardApp({
                 onDiscoModeTrigger={startDiscoMode}
                 onDiscoModeExit={stopDiscoMode}
                 onPadMarkerSelect={groupedLights.length ? handleGroupedLightSelect : undefined}
+                onFormationIndicatorSelect={handleGroupRelativeFormationSelect}
                 onPadDoubleSelect={handlePadDoubleSelect}
                 onToggle={resolvedLayout === 'compact' ? handleCompactToggle : handleToggle}
+                favoritePresets={favoritePresets}
+                builtinFavoritePresets={builtinFavoritePresets}
+                activeFavoriteId={activeFavoriteId}
+                onFavoriteSave={handleFavoriteSave}
+                onBuiltinFavoriteApply={handleBuiltinFavoriteApply}
+                onFavoriteDelete={handleFavoriteDelete}
+                onFavoriteEditCommit={handleFavoriteEditCommit}
+                onFavoriteApply={handleFavoriteApply}
                 groupedLights={groupedLights}
                 groupedLightMarkers={groupedLightMarkers}
-                controlScope={controlScope}
+                groupRelativeFormationIndicator={groupRelativeFormationIndicator}
+                controlScope={effectiveControlScope}
                 controlledLightEntityId={controlledLightEntityId}
                 onControlScopeChange={handleControlScopeChange}
                 onGroupedLightSelect={handleGroupedLightSelect}

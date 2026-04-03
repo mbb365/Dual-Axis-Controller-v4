@@ -138,9 +138,25 @@ export const HALO_CSS = `
 }
 
 .halo__pixel-cell {
+    position: relative;
     width: 100%;
     height: 100%;
     border-radius: 6px;
+}
+
+.halo__pixel-cell-center-dot {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 26%;
+    height: 26%;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow:
+        0 0 0 1px rgba(15, 23, 42, 0.08),
+        0 0 8px rgba(255, 255, 255, 0.42);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
 }
 
 .halo__pixel-cell-wrap:focus-visible {
@@ -270,6 +286,12 @@ export const HALO_CSS = `
         inset 0 0 80px rgba(168, 85, 247, 0.18);
 }
 
+.halo__pad.is-style-matrix.is-off {
+    border-color: transparent;
+    box-shadow: none;
+    background: transparent;
+}
+
 .halo__pad.is-disco {
     cursor: pointer;
 }
@@ -290,8 +312,54 @@ export const HALO_CSS = `
         box-shadow 220ms ease;
 }
 
+.halo__indicator.is-group-relative,
+.halo__indicator-ghost.is-group-relative {
+    width: 22px;
+    height: 22px;
+    border: 4px solid rgba(210, 255, 251, 0.98);
+    border-radius: 8px;
+    background: transparent;
+    box-shadow:
+        0 0 0 1px rgba(15, 23, 42, 0.08),
+        0 0 14px rgba(72, 244, 230, 0.24),
+        0 8px 18px rgba(15, 23, 42, 0.18);
+}
+
+.halo__indicator.is-group-relative::after,
+.halo__indicator-ghost.is-group-relative::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    border-radius: 1px;
+    background: rgba(210, 255, 251, 0.98);
+    transform: translate(-50%, -50%);
+    box-shadow:
+        -16px -16px 0 rgba(210, 255, 251, 0.98),
+        16px -16px 0 rgba(210, 255, 251, 0.98),
+        -16px 16px 0 rgba(210, 255, 251, 0.98),
+        16px 16px 0 rgba(210, 255, 251, 0.98);
+}
+
 .halo__indicator.is-live {
     transition: box-shadow 220ms ease;
+}
+
+.halo__indicator--formation {
+    appearance: none;
+    -webkit-appearance: none;
+    padding: 0;
+    z-index: 2;
+    opacity: 0.88;
+    pointer-events: auto;
+    cursor: grab;
+}
+
+.halo__indicator--formation:focus-visible {
+    outline: 2px solid rgba(59, 130, 246, 0.9);
+    outline-offset: 2px;
 }
 
 .halo__indicator.is-handoff {
@@ -309,6 +377,13 @@ export const HALO_CSS = `
     pointer-events: none;
     z-index: 2;
     animation: halo-indicator-ghost 240ms ease forwards;
+}
+
+.halo__indicator-ghost.is-group-relative {
+    opacity: 0.3;
+    box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.08),
+        0 0 8px rgba(72, 244, 230, 0.14);
 }
 
 .halo__group-indicator {
@@ -389,13 +464,12 @@ export const HALO_CSS = `
     animation: halo-disco-spin 8s linear infinite, halo-disco-breathe 2.2s ease-in-out infinite alternate;
 }
 
+.halo__disco-overlay--matrix::before {
+    content: none;
+}
+
 .halo__disco-overlay::after {
-    inset: 0;
-    background:
-        radial-gradient(circle at 50% 24%, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.08) 18%, rgba(255, 255, 255, 0) 48%),
-        linear-gradient(180deg, rgba(11, 18, 32, 0.18) 0%, rgba(11, 18, 32, 0.3) 100%);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    content: none;
 }
 
 .halo__disco-message {
@@ -407,24 +481,28 @@ export const HALO_CSS = `
     background: transparent;
     border: 0;
     box-shadow: none;
-    color: #f8fafc;
+    color: rgba(15, 23, 42, 0.92);
     text-align: center;
+}
+
+.halo__disco-overlay--matrix .halo__disco-message {
+    text-shadow: 0 1px 10px rgba(255, 255, 255, 0.28);
 }
 
 .halo__disco-title {
     display: block;
-    margin-bottom: 8px;
-    font-size: 0.98rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
+    margin-bottom: 12px;
+    font-size: 1.3rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
 }
 
 .halo__disco-copy {
     margin: 0;
-    font-size: 0.88rem;
-    line-height: 1.45;
-    font-weight: 500;
-    color: rgba(248, 250, 252, 0.96);
+    font-size: 1rem;
+    line-height: 1.55;
+    font-weight: 700;
+    color: rgba(15, 23, 42, 0.88);
 }
 
 @keyframes halo-disco-spin {
@@ -468,6 +546,25 @@ export const HALO_CSS = `
         border-width: 3px;
     }
 
+    .halo__indicator.is-group-relative,
+    .halo__indicator-ghost.is-group-relative {
+        width: 19px;
+        height: 19px;
+        border-width: 3px;
+        border-radius: 7px;
+    }
+
+    .halo__indicator.is-group-relative::after,
+    .halo__indicator-ghost.is-group-relative::after {
+        width: 5px;
+        height: 5px;
+        box-shadow:
+            -13px -13px 0 rgba(210, 255, 251, 0.98),
+            13px -13px 0 rgba(210, 255, 251, 0.98),
+            -13px 13px 0 rgba(210, 255, 251, 0.98),
+            13px 13px 0 rgba(210, 255, 251, 0.98);
+    }
+
     .halo__indicator-ghost {
         width: 23px;
         height: 23px;
@@ -490,15 +587,27 @@ export const HALO_CSS = `
     }
 
     .halo__disco-title {
-        font-size: 0.9rem;
+        font-size: 1.08rem;
     }
 
     .halo__disco-copy {
-        font-size: 0.8rem;
+        font-size: 0.92rem;
     }
 }
 
 @media (prefers-color-scheme: dark) {
+    .halo__disco-message {
+        color: #f8fafc;
+    }
+
+    .halo__disco-overlay--matrix .halo__disco-message {
+        text-shadow: 0 1px 10px rgba(15, 23, 42, 0.4);
+    }
+
+    .halo__disco-copy {
+        color: rgba(248, 250, 252, 0.96);
+    }
+
     .halo__pad {
         background-color: rgba(26, 31, 38, 0.96);
         box-shadow: none;

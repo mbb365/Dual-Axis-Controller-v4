@@ -107,3 +107,32 @@ export async function callLightService(
         throw error;
     }
 }
+
+function sceneIdFromEntityId(sceneEntityId: string) {
+    return sceneEntityId.replace(/^scene\./, '');
+}
+
+export async function createSceneSnapshot(hass: any, sceneEntityId: string, snapshotEntities: string[]) {
+    if (!hass || !snapshotEntities.length) return;
+
+    await hass.callService('scene', 'create', {
+        scene_id: sceneIdFromEntityId(sceneEntityId),
+        snapshot_entities: snapshotEntities,
+    });
+}
+
+export async function activateScene(hass: any, sceneEntityId: string) {
+    if (!hass) return;
+
+    await hass.callService('scene', 'turn_on', {
+        entity_id: sceneEntityId,
+    });
+}
+
+export async function deleteScene(hass: any, sceneEntityId: string) {
+    if (!hass) return;
+
+    await hass.callService('scene', 'delete', {
+        entity_id: sceneEntityId,
+    });
+}

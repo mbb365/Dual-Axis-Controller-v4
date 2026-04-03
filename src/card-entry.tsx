@@ -122,7 +122,6 @@ class DualControllerCard extends HTMLElement {
             <CardApp
                 hass={this._hass}
                 entityId={this._config.entity ?? ''}
-                icon={this._config.icon}
                 name={this._config.name}
                 layout={this._config.layout ?? 'auto'}
                 onTapAction={this._config.tap_action ? () => this._dispatchAction('tap') : undefined}

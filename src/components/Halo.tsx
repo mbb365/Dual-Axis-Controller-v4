@@ -42,10 +42,13 @@ interface HaloProps {
     onDiscoModeTrigger?: () => void;
     onDiscoModeExit?: () => void;
     onMarkerSelect?: (entityId: string) => void;
+    onFormationIndicatorSelect?: () => void;
     onDoubleSelect?: (hue: number, saturation: number, brightness: number) => void;
     onToggle: () => void;
     mode: 'temperature' | 'spectrum';
     visualStyle?: HaloVisualStyle;
+    indicatorVariant?: 'default' | 'group-relative';
+    formationIndicator?: HaloIndicatorSelection | null;
 }
 
 export interface HaloMarker {
@@ -55,6 +58,12 @@ export interface HaloMarker {
     brightness: number;
     isOn: boolean;
     isActive?: boolean;
+}
+
+export interface HaloIndicatorSelection {
+    hue: number;
+    saturation: number;
+    brightness: number;
 }
 
 interface HaloPulse {
@@ -95,10 +104,13 @@ export function Halo({
     onDiscoModeTrigger,
     onDiscoModeExit,
     onMarkerSelect,
+    onFormationIndicatorSelect,
     onDoubleSelect,
     onToggle,
     mode,
     visualStyle = 'plotter',
+    indicatorVariant = 'default',
+    formationIndicator = null,
 }: HaloProps) {
     const trackpadRef = useRef<HTMLDivElement>(null);
     const overlayRef = useRef<HTMLDivElement>(null);
@@ -345,6 +357,44 @@ export function Halo({
         trackpadRef.current?.setPointerCapture(event.pointerId);
     };
 
+    const handleFormationIndicatorPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+        if (!formationIndicator) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (isDiscoMode) {
+            resetSpeedRuleTracking();
+            onDiscoModeExit?.();
+            return;
+        }
+
+        onFormationIndicatorSelect?.();
+
+        resetSpeedRuleTracking();
+        lastEmittedSelectionRef.current = null;
+        setDragSourceMarkerId(null);
+        const formationSelection = {
+            brightness: formationIndicator.brightness,
+            hue: formationIndicator.hue,
+            saturation: formationIndicator.saturation,
+            xPercent: xPosFromHueSat(
+                formationIndicator.hue,
+                formationIndicator.saturation,
+                mode,
+                lockedSpectrumHue,
+                visualStyle
+            ),
+            yPercent: yPosFromBrightness(formationIndicator.brightness, visualStyle),
+        };
+        setDragSelection(formationSelection);
+        setIsDragging(true);
+        onInteractionStart?.();
+        trackpadRef.current?.setPointerCapture(event.pointerId);
+    };
+
     const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
         if (!isDragging || !isOn || isDiscoMode) return;
         updateFromPosition(event);
@@ -411,6 +461,36 @@ export function Halo({
         0,
         Math.min(PIXEL_GRID_SIZE - 1, Math.floor((visibleSelection.yPercent / 100) * PIXEL_GRID_SIZE))
     );
+    const formationBrickColumn =
+        isBrickStyle && formationIndicator
+            ? Math.max(
+                  0,
+                  Math.min(
+                      PIXEL_GRID_SIZE - 1,
+                      Math.floor(
+                          (xPosFromHueSat(
+                              formationIndicator.hue,
+                              formationIndicator.saturation,
+                              mode,
+                              lockedSpectrumHue,
+                              visualStyle
+                          ) /
+                              100) *
+                              PIXEL_GRID_SIZE
+                      )
+                  )
+              )
+            : null;
+    const formationBrickRow =
+        isBrickStyle && formationIndicator
+            ? Math.max(
+                  0,
+                  Math.min(
+                      PIXEL_GRID_SIZE - 1,
+                      Math.floor((yPosFromBrightness(formationIndicator.brightness, visualStyle) / 100) * PIXEL_GRID_SIZE)
+                  )
+              )
+            : null;
     const pixelMarkerLookup = isBrickStyle
         ? markers.reduce<Record<string, { color: string; isActive: boolean; isOn: boolean }>>((lookup, marker) => {
               const markerColumn = Math.max(
@@ -462,6 +542,7 @@ export function Halo({
                   const hasMarker = Boolean(markerState);
                   const isActiveMarkerCell = Boolean(markerState?.isActive);
                   const isSelectedBrickCell = cell.row === selectedBrickRow && cell.column === selectedBrickColumn;
+                  const isFormationCell = formationBrickRow === cell.row && formationBrickColumn === cell.column;
                   const isPrimaryBrickCell = isActiveMarkerCell || isSelectedBrickCell;
                   const markerGlowMultiplier = hasMarker ? (isActiveMarkerCell ? 1.15 : 0.3) : 1;
                   const baseLitColor = buildSurfaceNodeColor(
@@ -499,6 +580,7 @@ export function Halo({
                       isTopLitCell,
                       hasMarker,
                       isActiveMarkerCell,
+                      isFormationCell,
                   };
               })
             : null;
@@ -570,8 +652,12 @@ export function Halo({
                                 <button
                                     key={cell.key}
                                     type="button"
-                                    className={`halo__pixel-cell-wrap${cell.isLit ? ' is-lit' : ''}${cell.isTopLitCell ? ' is-top-lit' : ''}`}
-                                    aria-label={`Set light to row ${PIXEL_GRID_SIZE - cell.selection.yPercent / 10}, column ${Math.round(cell.selection.xPercent / 10) + 1}`}
+                                    className={`halo__pixel-cell-wrap${cell.isLit ? ' is-lit' : ''}${cell.isTopLitCell ? ' is-top-lit' : ''}${cell.isFormationCell ? ' is-formation' : ''}`}
+                                    aria-label={
+                                        cell.isFormationCell
+                                            ? 'Control group relative position'
+                                            : `Set light to row ${PIXEL_GRID_SIZE - cell.selection.yPercent / 10}, column ${Math.round(cell.selection.xPercent / 10) + 1}`
+                                    }
                                     onPointerDown={(event) => {
                                         event.preventDefault();
                                         event.stopPropagation();
@@ -579,6 +665,9 @@ export function Halo({
                                             resetSpeedRuleTracking();
                                             onDiscoModeExit?.();
                                             return;
+                                        }
+                                        if (cell.isFormationCell) {
+                                            onFormationIndicatorSelect?.();
                                         }
                                         onInteractionStart?.();
                                         lastEmittedSelectionRef.current = cell.selection;
@@ -589,7 +678,7 @@ export function Halo({
                                         setDragSelection(null);
                                         resetSpeedRuleTracking();
                                     }}
-                                >
+                                    >
                                     <span
                                         className="halo__pixel-cell"
                                         style={{
@@ -597,7 +686,9 @@ export function Halo({
                                             boxShadow: cell.boxShadow,
                                             opacity: cell.opacity,
                                         }}
-                                    />
+                                    >
+                                        {cell.isFormationCell ? <span className="halo__pixel-cell-center-dot" aria-hidden="true" /> : null}
+                                    </span>
                                 </button>
                             ))}
                         </div>
@@ -622,7 +713,7 @@ export function Halo({
                 </div>
                 <div ref={overlayRef} className="halo__overlay">
                 {isDiscoMode ? (
-                    <div className="halo__disco-overlay">
+                    <div className={`halo__disco-overlay${visualStyle === 'matrix' ? ' halo__disco-overlay--matrix' : ''}`}>
                         <div className="halo__disco-message">
                             <strong className="halo__disco-title">DISCO MODE!</strong>
                             <p className="halo__disco-copy">
@@ -674,7 +765,9 @@ export function Halo({
                 ) : null}
                 {ghostSelection && !isDiscoMode && !isBrickStyle ? (
                     <div
-                        className="halo__indicator-ghost"
+                        className={classNames('halo__indicator-ghost', {
+                            'is-group-relative': indicatorVariant === 'group-relative',
+                        })}
                         style={{
                             left: `${ghostSelection.xPercent}%`,
                             top: `${ghostSelection.yPercent}%`,
@@ -698,11 +791,30 @@ export function Halo({
                         }}
                     />
                 ) : null}
+                {formationIndicator && !isDiscoMode && !isBrickStyle ? (
+                    <button
+                        type="button"
+                        className="halo__indicator halo__indicator--formation is-group-relative"
+                        aria-label="Control group relative position"
+                        onPointerDown={handleFormationIndicatorPointerDown}
+                        style={{
+                            left: `${xPosFromHueSat(
+                                formationIndicator.hue,
+                                formationIndicator.saturation,
+                                mode,
+                                lockedSpectrumHue,
+                                visualStyle
+                            )}%`,
+                            top: `${yPosFromBrightness(formationIndicator.brightness, visualStyle)}%`,
+                        }}
+                    />
+                ) : null}
                 {isOn && !isDiscoMode && !isBrickStyle ? (
                     <div
                         className={classNames('halo__indicator', {
                             'is-live': !!dragSelection,
                             'is-handoff': !!handoffSelection && !dragSelection,
+                            'is-group-relative': indicatorVariant === 'group-relative',
                         })}
                         style={{
                             left: `${visibleSelection.xPercent}%`,

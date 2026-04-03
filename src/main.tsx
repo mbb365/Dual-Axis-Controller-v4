@@ -162,6 +162,15 @@ function MockHomeAssistant() {
             },
         },
     });
+    const [savedScenes, setSavedScenes] = useState<
+        Record<
+            string,
+            {
+                friendly_name: string;
+                snapshot: Record<string, (typeof memberStates)[keyof typeof memberStates]>;
+            }
+        >
+    >({});
 
     const hass = useMemo(
         () => ({
@@ -179,31 +188,97 @@ function MockHomeAssistant() {
                         },
                     ])
                 ),
+                ...Object.fromEntries(
+                    Object.entries(savedScenes).map(([entityId, scene]) => [
+                        entityId,
+                        {
+                            state: 'on',
+                            attributes: {
+                                friendly_name: scene.friendly_name,
+                            },
+                        },
+                    ])
+                ),
             },
             callService: async (domain: string, service: string, serviceData: Record<string, unknown>) => {
                 if (domain === 'scene' && service === 'turn_on' && typeof serviceData.entity_id === 'string') {
-                    const selectedScene = demoScenes[serviceData.entity_id as keyof typeof demoScenes];
-                    if (!selectedScene) return;
-
-                    setMemberStates((previous) =>
-                        Object.fromEntries(
-                            Object.entries(previous).map(([lightEntityId, lightState]) => [
-                                lightEntityId,
-                                {
-                                    ...lightState,
-                                    state: selectedScene.state,
-                                    attributes: {
-                                        ...lightState.attributes,
-                                        brightness: selectedScene.attributes.brightness,
-                                        color_mode: selectedScene.attributes.color_mode,
-                                        color_temp: selectedScene.attributes.color_temp,
-                                        color_temp_kelvin: selectedScene.attributes.color_temp_kelvin,
-                                        hs_color: selectedScene.attributes.hs_color,
+                    const selectedDemoScene = demoScenes[serviceData.entity_id as keyof typeof demoScenes];
+                    if (selectedDemoScene) {
+                        setMemberStates((previous) =>
+                            Object.fromEntries(
+                                Object.entries(previous).map(([lightEntityId, lightState]) => [
+                                    lightEntityId,
+                                    {
+                                        ...lightState,
+                                        state: selectedDemoScene.state,
+                                        attributes: {
+                                            ...lightState.attributes,
+                                            brightness: selectedDemoScene.attributes.brightness,
+                                            color_mode: selectedDemoScene.attributes.color_mode,
+                                            color_temp: selectedDemoScene.attributes.color_temp,
+                                            color_temp_kelvin: selectedDemoScene.attributes.color_temp_kelvin,
+                                            hs_color: selectedDemoScene.attributes.hs_color,
+                                        },
                                     },
-                                },
-                            ])
-                        ) as typeof previous
-                    );
+                                ])
+                            ) as typeof previous
+                        );
+                        return;
+                    }
+
+                    const savedScene = savedScenes[serviceData.entity_id];
+                    if (!savedScene) return;
+
+                    setMemberStates((previous) => {
+                        const nextState = { ...previous };
+                        for (const [lightEntityId, lightState] of Object.entries(savedScene.snapshot)) {
+                            nextState[lightEntityId as keyof typeof nextState] = {
+                                ...lightState,
+                                attributes: { ...lightState.attributes },
+                            };
+                        }
+                        return nextState;
+                    });
+                    return;
+                }
+
+                if (domain === 'scene' && service === 'create' && typeof serviceData.scene_id === 'string') {
+                    const snapshotEntities = Array.isArray(serviceData.snapshot_entities)
+                        ? serviceData.snapshot_entities.filter(
+                              (entityId): entityId is string => typeof entityId === 'string' && entityId in memberStates
+                          )
+                        : [];
+
+                    if (!snapshotEntities.length) return;
+
+                    const nextEntityId = `scene.${serviceData.scene_id}`;
+                    setSavedScenes((previous) => ({
+                        ...previous,
+                        [nextEntityId]: {
+                            friendly_name: String(serviceData.scene_id).replace(/^dac_/, '').replace(/_/g, ' '),
+                            snapshot: Object.fromEntries(
+                                snapshotEntities.map((entityId) => [
+                                    entityId,
+                                    {
+                                        ...memberStates[entityId as keyof typeof memberStates],
+                                        attributes: {
+                                            ...memberStates[entityId as keyof typeof memberStates].attributes,
+                                        },
+                                    },
+                                ])
+                            ),
+                        },
+                    }));
+                    return;
+                }
+
+                if (domain === 'scene' && service === 'delete' && typeof serviceData.entity_id === 'string') {
+                    const sceneEntityId = serviceData.entity_id;
+                    setSavedScenes((previous) => {
+                        const nextScenes = { ...previous };
+                        delete nextScenes[sceneEntityId];
+                        return nextScenes;
+                    });
                     return;
                 }
 
@@ -256,7 +331,7 @@ function MockHomeAssistant() {
                 });
             },
         }),
-        [memberStates]
+        [memberStates, savedScenes]
     );
 
     return (

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import compactCardStyles from './CompactCard.css?inline';
-import type { HaloMarker, HaloVisualStyle } from './Halo';
+import type { HaloIndicatorSelection, HaloMarker, HaloVisualStyle } from './Halo';
+import type { BuiltinFavoritePreset, FavoritePreset } from '../utils/favorites';
 import { CompactView } from './compact-card/CompactView';
 import {
     buildCompactBackground,
@@ -13,11 +14,6 @@ import {
 import { ExpandedCard } from './compact-card/ExpandedCard';
 
 export type CardLayout = 'compact' | 'expanded';
-
-export interface ColorOption {
-    hue: number;
-    label: string;
-}
 
 export interface GroupedLightOption {
     entityId: string;
@@ -34,10 +30,8 @@ interface CompactCardProps {
     layout: CardLayout;
     isDarkMode?: boolean;
     lightName: string;
-    expandedAreaName?: string | null;
     expandedPrimaryName?: string;
     expandedSecondaryName?: string | null;
-    icon: string;
     isOn: boolean;
     hue: number;
     saturation: number;
@@ -49,7 +43,6 @@ interface CompactCardProps {
     onModeChange: (mode: 'temperature' | 'spectrum') => void;
     onControlsChange: (h: number, s: number, b: number) => void;
     selectedColorHue?: number | null;
-    onColorSelect?: (hue: number) => void;
     padVisualStyle?: HaloVisualStyle;
     onPadVisualStyleChange?: (style: HaloVisualStyle) => void;
     onControlInteractionStart?: () => void;
@@ -58,10 +51,20 @@ interface CompactCardProps {
     onDiscoModeTrigger?: () => void;
     onDiscoModeExit?: () => void;
     onPadMarkerSelect?: (entityId: string) => void;
+    onFormationIndicatorSelect?: () => void;
     onPadDoubleSelect?: (h: number, s: number, b: number) => void;
     onToggle: () => void;
+    favoritePresets?: FavoritePreset[];
+    builtinFavoritePresets?: BuiltinFavoritePreset[];
+    activeFavoriteId?: string | null;
+    onFavoriteSave?: () => void;
+    onFavoriteApply?: (favoriteId: string) => void;
+    onBuiltinFavoriteApply?: (favoriteId: string) => void;
+    onFavoriteDelete?: (favoriteId: string) => void;
+    onFavoriteEditCommit?: (favoriteIdsToDelete: string[], shouldSaveCurrent: boolean) => void;
     groupedLights?: GroupedLightOption[];
     groupedLightMarkers?: HaloMarker[];
+    groupRelativeFormationIndicator?: HaloIndicatorSelection | null;
     controlScope?: 'group' | 'group-relative' | 'individual';
     controlledLightEntityId?: string | null;
     onControlScopeChange?: (scope: 'group' | 'group-relative') => void;
@@ -76,10 +79,8 @@ export function CompactCard({
     layout,
     isDarkMode = false,
     lightName,
-    expandedAreaName,
     expandedPrimaryName,
     expandedSecondaryName,
-    icon: _icon,
     isOn,
     hue,
     saturation,
@@ -91,7 +92,6 @@ export function CompactCard({
     onModeChange,
     onControlsChange,
     selectedColorHue,
-    onColorSelect,
     padVisualStyle = 'plotter',
     onPadVisualStyleChange,
     onControlInteractionStart,
@@ -100,10 +100,20 @@ export function CompactCard({
     onDiscoModeTrigger,
     onDiscoModeExit,
     onPadMarkerSelect,
+    onFormationIndicatorSelect,
     onPadDoubleSelect,
     onToggle,
+    favoritePresets = [],
+    builtinFavoritePresets = [],
+    activeFavoriteId,
+    onFavoriteSave,
+    onFavoriteApply,
+    onBuiltinFavoriteApply,
+    onFavoriteDelete,
+    onFavoriteEditCommit,
     groupedLights = [],
     groupedLightMarkers = [],
+    groupRelativeFormationIndicator = null,
     controlScope = 'group',
     controlledLightEntityId,
     onControlScopeChange,
@@ -137,8 +147,6 @@ export function CompactCard({
         buildGroupedCompactBackground(groupedLights, isDarkMode) ??
         buildCompactBackground(isOn, hue, saturation, brightness, uiMode, isDarkMode);
     const displayExpandedPrimaryName = expandedPrimaryName ?? lightName;
-    const displayExpandedAreaName =
-        expandedAreaName && expandedAreaName !== displayExpandedPrimaryName ? expandedAreaName : null;
     const displayExpandedSecondaryName =
         expandedSecondaryName && expandedSecondaryName !== displayExpandedPrimaryName ? expandedSecondaryName : null;
     const getGroupedLightToggleStyle = (groupedLight: GroupedLightOption) => ({
@@ -252,14 +260,12 @@ export function CompactCard({
             <style>{compactCardStyles}</style>
             <ExpandedCard
                 isDarkMode={isDarkMode}
-                displayExpandedAreaName={displayExpandedAreaName}
                 displayExpandedPrimaryName={displayExpandedPrimaryName}
                 displayExpandedSecondaryName={displayExpandedSecondaryName}
                 leadingValue={leadingValue}
                 brightness={brightness}
                 hue={hue}
                 saturation={saturation}
-                kelvin={kelvin}
                 isOn={isOn}
                 uiMode={uiMode}
                 canUseTemperature={canUseTemperature}
@@ -267,7 +273,6 @@ export function CompactCard({
                 onModeChange={onModeChange}
                 onControlsChange={onControlsChange}
                 selectedColorHue={selectedColorHue}
-                onColorSelect={onColorSelect}
                 padVisualStyle={padVisualStyle}
                 onPadVisualStyleChange={onPadVisualStyleChange}
                 onControlInteractionStart={onControlInteractionStart}
@@ -276,11 +281,21 @@ export function CompactCard({
                 onDiscoModeTrigger={onDiscoModeTrigger}
                 onDiscoModeExit={onDiscoModeExit}
                 onPadMarkerSelect={onPadMarkerSelect}
+                onFormationIndicatorSelect={onFormationIndicatorSelect}
                 onPadDoubleSelect={onPadDoubleSelect}
                 onToggle={onToggle}
+                favoritePresets={favoritePresets}
+                builtinFavoritePresets={builtinFavoritePresets}
+                activeFavoriteId={activeFavoriteId}
+                onFavoriteSave={onFavoriteSave}
+                onFavoriteApply={onFavoriteApply}
+                onBuiltinFavoriteApply={onBuiltinFavoriteApply}
+                onFavoriteDelete={onFavoriteDelete}
+                onFavoriteEditCommit={onFavoriteEditCommit}
                 lightName={lightName}
                 groupedLights={groupedLights}
                 groupedLightMarkers={groupedLightMarkers}
+                groupRelativeFormationIndicator={groupRelativeFormationIndicator}
                 controlScope={controlScope}
                 controlledLightEntityId={controlledLightEntityId}
                 isGroupListOpen={isGroupListOpen}

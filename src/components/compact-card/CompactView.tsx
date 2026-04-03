@@ -66,9 +66,11 @@ export function CompactView({
             >
                 <ha-icon icon="mdi:power" className="dual-card__icon" />
             </button>
-            <div className="dual-card__content">
-                <div className="dual-card__title">{lightName}</div>
-                <div className="dual-card__subtitle">{statusText}</div>
+            <div className="dual-card__compact-main">
+                <div className="dual-card__content">
+                    <div className="dual-card__title">{lightName}</div>
+                    <div className="dual-card__subtitle">{statusText}</div>
+                </div>
             </div>
         </div>
     );
