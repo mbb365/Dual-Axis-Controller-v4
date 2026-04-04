@@ -166,6 +166,7 @@ function MockHomeAssistant() {
         Record<
             string,
             {
+                entities: Record<string, Record<string, unknown> | string>;
                 friendly_name: string;
                 snapshot: Record<string, (typeof memberStates)[keyof typeof memberStates]>;
             }
@@ -194,6 +195,8 @@ function MockHomeAssistant() {
                         {
                             state: 'on',
                             attributes: {
+                                entities: scene.entities,
+                                entity_id: Object.keys(scene.snapshot),
                                 friendly_name: scene.friendly_name,
                             },
                         },
@@ -261,6 +264,19 @@ function MockHomeAssistant() {
                     setSavedScenes((previous) => ({
                         ...previous,
                         [nextEntityId]: {
+                            entities: Object.fromEntries(
+                                explicitEntities.map(([entityId, entityState]) => [
+                                    entityId,
+                                    typeof entityState === 'string'
+                                        ? entityState
+                                        : Object.fromEntries(
+                                              Object.entries(entityState as Record<string, unknown>).map(([key, value]) => [
+                                                  key,
+                                                  value,
+                                              ])
+                                          ),
+                                ])
+                            ),
                             friendly_name: String(serviceData.scene_id).replace(/^dac_/, '').replace(/_/g, ' '),
                             snapshot: Object.fromEntries([
                                 ...snapshotEntities.map((entityId) => [

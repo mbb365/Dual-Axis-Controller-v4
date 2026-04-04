@@ -105,16 +105,21 @@ class DualControllerCard extends HTMLElement {
         if (!this._config || !this._hass) return;
 
         if (!this._root) {
-            const shadow = this.attachShadow({ mode: 'open' });
-            const card = document.createElement('ha-card');
-            card.style.background = 'none';
-            card.style.border = 'none';
-            card.style.boxShadow = 'none';
-            card.style.display = 'block';
-            card.style.width = '100%';
-            card.style.height = 'auto';
-            card.style.overflow = 'visible';
-            shadow.appendChild(card);
+            const shadow = this.shadowRoot ?? this.attachShadow({ mode: 'open' });
+            let card = shadow.querySelector<HTMLElement>('ha-card');
+
+            if (!card) {
+                card = document.createElement('ha-card');
+                card.style.background = 'none';
+                card.style.border = 'none';
+                card.style.boxShadow = 'none';
+                card.style.display = 'block';
+                card.style.width = '100%';
+                card.style.height = 'auto';
+                card.style.overflow = 'visible';
+                shadow.appendChild(card);
+            }
+
             this._root = createRoot(card);
         }
 

@@ -433,9 +433,121 @@ export function buildFavoriteSceneEntities(favorite: FavoritePreset) {
     );
 }
 
+function favoriteSettingsFromSceneEntityDefinition(
+    definition: Record<string, unknown> | string,
+    fallbackSettings: FavoriteSettings
+): FavoriteSettings {
+    if (typeof definition === 'string') {
+        return normalizeFavoriteSettings({
+            ...fallbackSettings,
+            brightness: definition === 'off' ? 0 : fallbackSettings.brightness,
+            isOn: definition !== 'off' && fallbackSettings.brightness > 0,
+        });
+    }
+
+    const brightness =
+        typeof definition.brightness === 'number'
+            ? clamp(Math.round((definition.brightness / 255) * 100), 0, 100)
+            : fallbackSettings.brightness;
+    const colorTempKelvin =
+        typeof definition.color_temp_kelvin === 'number'
+            ? Math.round(definition.color_temp_kelvin)
+            : typeof definition.color_temp === 'number' && definition.color_temp > 0
+              ? Math.round(1000000 / definition.color_temp)
+              : fallbackSettings.kelvin;
+    const hsColor = Array.isArray(definition.hs_color) ? definition.hs_color : null;
+    const hue =
+        hsColor && typeof hsColor[0] === 'number'
+            ? clamp(Math.round(hsColor[0]), 0, 360)
+            : fallbackSettings.hue;
+    const saturation =
+        hsColor && typeof hsColor[1] === 'number'
+            ? clamp(Math.round(hsColor[1]), 0, 100)
+            : fallbackSettings.saturation;
+    const mode =
+        typeof definition.color_mode === 'string'
+            ? definition.color_mode === 'color_temp'
+                ? 'temperature'
+                : definition.color_mode === 'hs'
+                  ? 'spectrum'
+                  : colorTempKelvin != null
+                    ? 'temperature'
+                    : hsColor
+                      ? 'spectrum'
+                      : fallbackSettings.mode
+            : colorTempKelvin != null
+              ? 'temperature'
+              : hsColor
+                ? 'spectrum'
+                : fallbackSettings.mode;
+
+    return normalizeFavoriteSettings({
+        brightness,
+        hue,
+        isOn: (typeof definition.state === 'string' ? definition.state === 'on' : fallbackSettings.isOn) && brightness > 0,
+        kelvin: mode === 'temperature' ? colorTempKelvin : null,
+        mode,
+        saturation,
+        selectedColorHue:
+            mode === 'spectrum'
+                ? hsColor && typeof hsColor[0] === 'number'
+                    ? clamp(Math.round(hsColor[0]), 0, 360)
+                    : fallbackSettings.selectedColorHue
+                : null,
+    });
+}
+
+function hydrateFavoriteMembersFromSceneState(
+    sceneState: any,
+    fallbackEntityId: string,
+    fallbackSettings: FavoriteSettings
+): FavoriteMemberPreset[] {
+    const explicitEntities =
+        sceneState?.attributes?.entities && typeof sceneState.attributes.entities === 'object'
+            ? Object.entries(sceneState.attributes.entities as Record<string, Record<string, unknown> | string>)
+            : [];
+
+    if (explicitEntities.length) {
+        return explicitEntities
+            .filter(([memberEntityId]) => typeof memberEntityId === 'string' && memberEntityId.startsWith('light.'))
+            .map(([memberEntityId, definition]) => ({
+                entityId: memberEntityId,
+                settings: favoriteSettingsFromSceneEntityDefinition(definition, fallbackSettings),
+            }));
+    }
+
+    const memberEntityIds = Array.isArray(sceneState?.attributes?.entity_id)
+        ? sceneState.attributes.entity_id.filter(
+              (memberEntityId: unknown): memberEntityId is string =>
+                  typeof memberEntityId === 'string' && memberEntityId.startsWith('light.')
+          )
+        : [];
+
+    if (memberEntityIds.length) {
+        return memberEntityIds.map((memberEntityId: string) => ({
+            entityId: memberEntityId,
+            settings: normalizeFavoriteSettings({
+                ...fallbackSettings,
+            }),
+        }));
+    }
+
+    return fallbackEntityId.startsWith('light.')
+        ? [
+              {
+                  entityId: fallbackEntityId,
+                  settings: normalizeFavoriteSettings({
+                      ...fallbackSettings,
+                  }),
+              },
+          ]
+        : [];
+}
+
 export function parseSharedFavoritePresetFromSceneState(
     entityId: string,
-    sceneEntityId: string
+    sceneEntityId: string,
+    sceneState?: any
 ): FavoritePreset | null {
     const prefix = `${scenePrefix(entityId)}${SHARED_SCENE_VERSION}_`;
     if (!sceneEntityId.startsWith(prefix)) {
@@ -501,7 +613,7 @@ export function parseSharedFavoritePresetFromSceneState(
         entityId,
         id,
         label: buildFavoriteLabel(settings, scope),
-        members: [],
+        members: hydrateFavoriteMembersFromSceneState(sceneState, entityId, settings),
         sceneEntityId,
         scope,
         settings,
@@ -515,8 +627,38 @@ export function loadSharedFavoritePresets(hass: any, entityId: string) {
 
     return Object.keys(hass.states)
         .filter((stateEntityId) => isSharedFavoriteSceneEntityId(stateEntityId, entityId))
-        .map((sceneEntityId) => parseSharedFavoritePresetFromSceneState(entityId, sceneEntityId))
+        .map((sceneEntityId) =>
+            parseSharedFavoritePresetFromSceneState(entityId, sceneEntityId, hass.states[sceneEntityId])
+        )
         .filter((favorite): favorite is FavoritePreset => favorite != null)
+        .sort((left, right) => left.createdAt - right.createdAt)
+        .slice(-MAX_FAVORITES);
+}
+
+function preferRicherFavoritePreset(existingFavorite: FavoritePreset, nextFavorite: FavoritePreset) {
+    if (existingFavorite.scope === 'group' && nextFavorite.scope === 'group') {
+        if (nextFavorite.members.length !== existingFavorite.members.length) {
+            return nextFavorite.members.length > existingFavorite.members.length ? nextFavorite : existingFavorite;
+        }
+    }
+
+    return nextFavorite;
+}
+
+export function mergeFavoritePresetCollections(...favoriteCollections: FavoritePreset[][]) {
+    const mergedFavorites = new Map<string, FavoritePreset>();
+
+    for (const favoriteCollection of favoriteCollections) {
+        for (const favorite of favoriteCollection) {
+            const existingFavorite = mergedFavorites.get(favorite.sceneEntityId);
+            mergedFavorites.set(
+                favorite.sceneEntityId,
+                existingFavorite ? preferRicherFavoritePreset(existingFavorite, favorite) : favorite
+            );
+        }
+    }
+
+    return Array.from(mergedFavorites.values())
         .sort((left, right) => left.createdAt - right.createdAt)
         .slice(-MAX_FAVORITES);
 }

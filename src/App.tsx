@@ -38,6 +38,7 @@ import {
     favoriteSettingsMatch,
     loadFavoritePresets,
     loadSharedFavoritePresets,
+    mergeFavoritePresetCollections,
     saveFavoritePresets,
     isSharedFavoriteSceneEntityId,
     type FavoriteMemberPreset,
@@ -252,6 +253,10 @@ export function CardApp({
     const hassRef = useRef(hass);
     const pendingControlCommand = useRef<QueuedControlCommand[] | null>(null);
     const lastSentControlCommand = useRef<QueuedControlCommand[] | null>(null);
+    const favoriteSceneApplyInFlight = useRef(false);
+    const pendingFavoriteSceneApply = useRef<{ favorite: FavoritePreset; token: number } | null>(null);
+    const lastRequestedFavoriteSceneToken = useRef(0);
+    const favoriteMigrationInFlightKey = useRef<string | null>(null);
     const groupRelativeLayout = useRef<GroupRelativeSnapshot | null>(null);
     const groupRelativeInteractionSnapshot = useRef<GroupRelativeSnapshot | null>(null);
     const lastLitGroupRelativeLayout = useRef<GroupRelativeSnapshot | null>(
@@ -282,6 +287,10 @@ export function CardApp({
     const groupedLights: GroupedLightOption[] = buildGroupedLights(hass, groupedLightIds);
     const isDarkMode = Boolean(hass?.themes?.darkMode);
     const groupedLightIdsKey = groupedLightIds.join('|');
+    const sharedFavoriteSceneSignature = Object.keys(hass?.states ?? {})
+        .filter((stateEntityId) => isSharedFavoriteSceneEntityId(stateEntityId, entityId))
+        .sort()
+        .join('|');
     const compactVisibleIsOn = groupedLightIds.length
         ? groupedLightIds.some((memberId) => getLightState(hass, memberId)?.state === 'on')
         : groupLight?.state === 'on';
@@ -421,78 +430,89 @@ export function CardApp({
 
     useEffect(() => {
         const storedFavorites = loadFavoritePresets(entityId);
-        const sharedFavorites = loadSharedFavoritePresets(hass, entityId);
-        const mergedFavorites = Array.from(
-            new Map(
-                [...sharedFavorites, ...storedFavorites].map((favorite) => [favorite.sceneEntityId, favorite])
-            ).values()
-        )
-            .sort((left, right) => left.createdAt - right.createdAt)
-            .slice(-3);
+        const sharedFavorites = loadSharedFavoritePresets(hassRef.current, entityId);
+        const mergedFavorites = mergeFavoritePresetCollections(sharedFavorites, storedFavorites);
 
         setFavoritePresets(mergedFavorites);
         saveFavoritePresets(entityId, mergedFavorites);
-    }, [entityId, hass]);
+    }, [entityId, sharedFavoriteSceneSignature]);
 
     useEffect(() => {
         const migratableFavorites = favoritePresets.filter(
             (favorite) => !isSharedFavoriteSceneEntityId(favorite.sceneEntityId, entityId)
         );
-        if (!hass || !migratableFavorites.length) {
+        const migrationKey = migratableFavorites
+            .map((favorite) => `${favorite.id}:${favorite.sceneEntityId}`)
+            .sort()
+            .join('|');
+
+        const activeHass = hassRef.current;
+        if (!activeHass || !migrationKey || favoriteMigrationInFlightKey.current === migrationKey) {
             return;
         }
 
+        favoriteMigrationInFlightKey.current = migrationKey;
         void (async () => {
             let nextFavorites = favoritePresets;
             let changed = false;
 
-            for (const favorite of migratableFavorites) {
-                const nextSceneEntityId = buildSharedFavoriteSceneEntityId(
-                    entityId,
-                    favorite.id,
-                    favorite.createdAt,
-                    favorite.scope,
-                    favorite.settings,
-                    favorite.entityId
-                );
-                if (nextSceneEntityId === favorite.sceneEntityId) {
-                    continue;
-                }
-
-                const migratedFavorite = {
-                    ...favorite,
-                    sceneEntityId: nextSceneEntityId,
-                } satisfies FavoritePreset;
-
-                try {
-                    await createSceneDefinition(hass, nextSceneEntityId, buildFavoriteSceneEntities(migratedFavorite));
-                    if (hass?.states?.[favorite.sceneEntityId]) {
-                        await deleteScene(hass, favorite.sceneEntityId);
+            try {
+                for (const favorite of migratableFavorites) {
+                    const nextSceneEntityId = buildSharedFavoriteSceneEntityId(
+                        entityId,
+                        favorite.id,
+                        favorite.createdAt,
+                        favorite.scope,
+                        favorite.settings,
+                        favorite.entityId
+                    );
+                    if (nextSceneEntityId === favorite.sceneEntityId) {
+                        continue;
                     }
 
-                    nextFavorites = nextFavorites.map((candidate) =>
-                        candidate.id === favorite.id ? migratedFavorite : candidate
-                    );
-                    changed = true;
-                } catch (error) {
-                    console.error('[Dual Halo Controller] Failed to migrate favourite to shared scene metadata', {
-                        entityId,
-                        favoriteId: favorite.id,
-                        previousSceneEntityId: favorite.sceneEntityId,
-                        nextSceneEntityId,
-                        error,
-                    });
+                    const migratedFavorite = {
+                        ...favorite,
+                        sceneEntityId: nextSceneEntityId,
+                    } satisfies FavoritePreset;
+
+                    try {
+                        await createSceneDefinition(
+                            activeHass,
+                            nextSceneEntityId,
+                            buildFavoriteSceneEntities(migratedFavorite)
+                        );
+                        if (activeHass?.states?.[favorite.sceneEntityId]) {
+                            await deleteScene(activeHass, favorite.sceneEntityId);
+                        }
+
+                        nextFavorites = nextFavorites.map((candidate) =>
+                            candidate.id === favorite.id ? migratedFavorite : candidate
+                        );
+                        changed = true;
+                    } catch (error) {
+                        console.error('[Dual Halo Controller] Failed to migrate favourite to shared scene metadata', {
+                            entityId,
+                            favoriteId: favorite.id,
+                            previousSceneEntityId: favorite.sceneEntityId,
+                            nextSceneEntityId,
+                            error,
+                        });
+                    }
+                }
+
+                if (!changed) {
+                    return;
+                }
+
+                setFavoritePresets(nextFavorites);
+                saveFavoritePresets(entityId, nextFavorites);
+            } finally {
+                if (favoriteMigrationInFlightKey.current === migrationKey) {
+                    favoriteMigrationInFlightKey.current = null;
                 }
             }
-
-            if (!changed) {
-                return;
-            }
-
-            setFavoritePresets(nextFavorites);
-            saveFavoritePresets(entityId, nextFavorites);
         })();
-    }, [entityId, favoritePresets, hass]);
+    }, [entityId, favoritePresets]);
 
     useEffect(() => {
         const storedControllerSession = loadControllerSession(entityId);
@@ -779,7 +799,7 @@ export function CardApp({
         setIsDiscoMode(false);
     }, []);
 
-    const startDiscoMode = useCallback(() => {
+    const resetQueuedControlState = useCallback(() => {
         pendingControlCommand.current = null;
         lastSentControlCommand.current = null;
         lastCommandTime.current = 0;
@@ -787,6 +807,10 @@ export function CardApp({
             window.clearTimeout(controlSendTimeout.current);
             controlSendTimeout.current = null;
         }
+    }, []);
+
+    const startDiscoMode = useCallback(() => {
+        resetQueuedControlState();
         controlBatchInFlight.current = false;
         groupRelativeInteractionSnapshot.current = null;
         setUiMode('spectrum');
@@ -798,7 +822,7 @@ export function CardApp({
         discoStepRef.current = 0;
         markInteraction(1200);
         setIsDiscoMode(true);
-    }, [markInteraction]);
+    }, [markInteraction, resetQueuedControlState]);
 
     const endControlInteraction = useCallback(() => {
         if (interactionTimeout.current) {
@@ -986,6 +1010,110 @@ export function CardApp({
             flushQueuedControlCommand(false);
         },
         [flushQueuedControlCommand]
+    );
+
+    const applyFavoriteDirectly = useCallback(
+        (favorite: FavoritePreset) => {
+            const activeHass = hassRef.current;
+            if (!activeHass) return;
+
+            if (favorite.scope === 'group') {
+                const groupCommands = favorite.members
+                    .map((member) => {
+                        const targetLight = getLightState(activeHass, member.entityId);
+                        if (!targetLight) return null;
+
+                        return buildQueuedControlCommand(
+                            member.entityId,
+                            targetLight,
+                            {
+                                brightness: member.settings.brightness,
+                                hue: member.settings.hue,
+                                saturation: member.settings.saturation,
+                            },
+                            member.settings.mode
+                        );
+                    })
+                    .filter((command): command is QueuedControlCommand => command != null);
+
+                if (groupCommands.length) {
+                    queueControlCommand(groupCommands);
+                    flushQueuedControlCommand(true);
+                }
+                return;
+            }
+
+            const targetLight = getLightState(activeHass, favorite.entityId);
+            if (!targetLight) return;
+
+            const nextCommand = buildQueuedControlCommand(
+                favorite.entityId,
+                targetLight,
+                {
+                    brightness: favorite.settings.brightness,
+                    hue: favorite.settings.hue,
+                    saturation: favorite.settings.saturation,
+                },
+                favorite.settings.mode
+            );
+
+            queueControlCommand([nextCommand]);
+            flushQueuedControlCommand(true);
+        },
+        [flushQueuedControlCommand, queueControlCommand]
+    );
+
+    const processPendingFavoriteSceneActivation = useCallback(() => {
+        if (favoriteSceneApplyInFlight.current) return;
+
+        favoriteSceneApplyInFlight.current = true;
+        void (async () => {
+            try {
+                while (true) {
+                    const nextActivation = pendingFavoriteSceneApply.current;
+                    if (!nextActivation) break;
+
+                    pendingFavoriteSceneApply.current = null;
+
+                    try {
+                        await activateScene(hassRef.current, nextActivation.favorite.sceneEntityId);
+                    } catch (error) {
+                        console.error('[Dual Halo Controller] Failed to activate favourite scene', {
+                            entityId,
+                            favoriteId: nextActivation.favorite.id,
+                            sceneEntityId: nextActivation.favorite.sceneEntityId,
+                            error,
+                        });
+
+                        const hasNewerFavoriteRequest =
+                            pendingFavoriteSceneApply.current != null ||
+                            nextActivation.token !== lastRequestedFavoriteSceneToken.current;
+
+                        if (!hasNewerFavoriteRequest) {
+                            applyFavoriteDirectly(nextActivation.favorite);
+                        }
+                    }
+                }
+            } finally {
+                favoriteSceneApplyInFlight.current = false;
+
+                if (pendingFavoriteSceneApply.current) {
+                    processPendingFavoriteSceneActivation();
+                }
+            }
+        })();
+    }, [applyFavoriteDirectly, entityId]);
+
+    const queueFavoriteSceneActivation = useCallback(
+        (favorite: FavoritePreset) => {
+            pendingFavoriteSceneApply.current = {
+                favorite,
+                token: lastRequestedFavoriteSceneToken.current + 1,
+            };
+            lastRequestedFavoriteSceneToken.current += 1;
+            processPendingFavoriteSceneActivation();
+        },
+        [processPendingFavoriteSceneActivation]
     );
 
     const beginControlInteraction = useCallback(() => {
@@ -1432,6 +1560,7 @@ export function CardApp({
             if (!favorite) return;
 
             stopDiscoMode();
+            resetQueuedControlState();
             clearInteractionLock();
             groupRelativeInteractionSnapshot.current = null;
             markInteraction(900);
@@ -1537,6 +1666,7 @@ export function CardApp({
             light,
             markInteraction,
             queueControlCommand,
+            resetQueuedControlState,
             rememberLastLitControlSettings,
             rememberLastLitGroupRelativeLayout,
             stopDiscoMode,
@@ -1745,6 +1875,7 @@ export function CardApp({
             if (!favorite) return;
 
             stopDiscoMode();
+            resetQueuedControlState();
             clearInteractionLock();
             hasExplicitModeSelection.current =
                 favorite.settings.mode === 'spectrum' && favorite.settings.selectedColorHue != null;
@@ -1772,80 +1903,30 @@ export function CardApp({
                         isOn: true,
                     });
                 }
-
-                const groupCommands = favorite.members
-                    .map((member) => {
-                        const targetLight = getLightState(hass, member.entityId);
-                        if (!targetLight) return null;
-
-                        return buildQueuedControlCommand(
-                            member.entityId,
-                            targetLight,
-                            {
-                                brightness: member.settings.brightness,
-                                hue: member.settings.hue,
-                                saturation: member.settings.saturation,
-                            },
-                            member.settings.mode
-                        );
-                    })
-                    .filter((command): command is QueuedControlCommand => command != null);
-
-                if (groupCommands.length) {
-                    queueControlCommand(groupCommands);
-                    flushQueuedControlCommand(true);
-                    return;
-                }
             } else {
                 activeEntityIdRef.current = favorite.entityId;
                 setControlScope('individual');
                 controlledLightEntityIdRef.current = favorite.entityId;
                 setControlledLightEntityId(favorite.entityId);
 
-                const targetLight = getLightState(hass, favorite.entityId);
-                if (targetLight) {
-                    if (favorite.settings.isOn && favorite.settings.brightness > 0) {
-                        rememberLastLitControlSettings(favorite.entityId, {
-                            ...favorite.settings,
-                            brightness: Math.max(1, favorite.settings.brightness),
-                            isOn: true,
-                        });
-                    }
-
-                    const nextCommand = buildQueuedControlCommand(
-                        favorite.entityId,
-                        targetLight,
-                        {
-                            brightness: favorite.settings.brightness,
-                            hue: favorite.settings.hue,
-                            saturation: favorite.settings.saturation,
-                        },
-                        favorite.settings.mode
-                    );
-
-                    queueControlCommand([nextCommand]);
-                    flushQueuedControlCommand(true);
-                    return;
+                if (favorite.settings.isOn && favorite.settings.brightness > 0) {
+                    rememberLastLitControlSettings(favorite.entityId, {
+                        ...favorite.settings,
+                        brightness: Math.max(1, favorite.settings.brightness),
+                        isOn: true,
+                    });
                 }
             }
 
-            void activateScene(hass, favorite.sceneEntityId).catch((error) => {
-                console.error('[Dual Halo Controller] Failed to activate favourite scene', {
-                    entityId,
-                    favoriteId,
-                    sceneEntityId: favorite.sceneEntityId,
-                    error,
-                });
-            });
+            queueFavoriteSceneActivation(favorite);
         },
         [
             clearInteractionLock,
             entityId,
             favoritePresets,
-            flushQueuedControlCommand,
-            hass,
             markInteraction,
-            queueControlCommand,
+            queueFavoriteSceneActivation,
+            resetQueuedControlState,
             rememberLastLitControlSettings,
             stopDiscoMode,
         ]
