@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CompactCard, type CardLayout, type GroupedLightOption } from './components/CompactCard';
 import { PopupCardShell } from './components/card-popup/PopupCardShell';
 import type { HaloMarker, HaloVisualStyle } from './components/Halo';
@@ -330,9 +330,6 @@ export function CardApp({
         .filter((stateEntityId) => isSharedFavoriteSceneEntityId(stateEntityId, entityId))
         .sort()
         .join('|');
-    const compactVisibleIsOn = groupedLightIds.length
-        ? groupedLightIds.some((memberId) => getLightState(hass, memberId)?.state === 'on')
-        : groupLight?.state === 'on';
     const separatedGroupedLightCount = groupedLightIds.length ? countSeparatedGroupedLights(hass, groupedLightIds) : 0;
     const shouldForceGroupRelative = separatedGroupedLightCount >= 2;
     const effectiveControlScope: ControlScope = shouldForceGroupRelative ? 'group-relative' : controlScope;
@@ -1587,7 +1584,14 @@ export function CardApp({
 
     const handleToggle = useCallback(() => {
         stopDiscoMode();
-        const nextState = !isOn;
+        
+        // Always check actual HA state, not React state
+        const targetEntityId =
+            effectiveControlScope === 'individual' && controlledLightEntityId ? controlledLightEntityId : entityId;
+        const actualLightState = getLightState(hass, targetEntityId);
+        const actualIsOn = actualLightState?.state === 'on';
+        const nextState = !actualIsOn;  // Use actual HA state, not React state
+        
         const currentRelativeLayout = effectiveControlScope === 'group-relative' ? ensureGroupRelativeLayout() : null;
         if (!nextState && currentRelativeLayout && hasLitGroupRelativeMembers(currentRelativeLayout)) {
             rememberLastLitGroupRelativeLayout(currentRelativeLayout);
@@ -1602,7 +1606,8 @@ export function CardApp({
                 selectedColorHue,
             });
         }
-        setIsOn(nextState);
+        
+        // Clean up state
         markInteraction(1000);
         groupRelativeLayout.current = null;
         groupRelativeInteractionSnapshot.current = null;
@@ -1611,13 +1616,16 @@ export function CardApp({
             setControlledLightEntityId(null);
         }
 
-        if (nextState && restoreRememberedControllerState(effectiveControlScope, controlledLightEntityId)) {
+        // Try to restore saved state if turning on
+        const shouldTryRestore = nextState && effectiveControlScope === (controlledLightEntityId ? 'individual' : 'group');
+        if (shouldTryRestore && restoreRememberedControllerState(effectiveControlScope, controlledLightEntityId)) {
+            // State was restored and service call was made by restoreRememberedControllerState
             return;
         }
 
-        const targetEntityId =
-            effectiveControlScope === 'individual' && controlledLightEntityId ? controlledLightEntityId : entityId;
+        // Always call the service (don't return early without calling it)
         callLightService(hass, targetEntityId, nextState);
+        setIsOn(nextState);
     }, [
         brightness,
         controlledLightEntityId,
@@ -1627,7 +1635,6 @@ export function CardApp({
         entityId,
         hass,
         hue,
-        isOn,
         kelvin,
         markInteraction,
         rememberLastLitControlSettings,
@@ -1657,7 +1664,9 @@ export function CardApp({
         if (!toggleTargetLight) return;
 
         stopDiscoMode();
-        const nextState = !compactVisibleIsOn;
+        // Use actual HA state instead of computed React state for consistency
+        const actualIsOn = toggleTargetLight?.state === 'on';
+        const nextState = !actualIsOn;
         if (!nextState) {
             if (compactRestoreScope === 'group-relative') {
                 const currentRelativeLayout = ensureGroupRelativeLayout();
@@ -1685,11 +1694,14 @@ export function CardApp({
             setControlledLightEntityId(null);
         }
 
-        if (nextState && restoreRememberedControllerState(compactRestoreScope, compactRestoreEntityId)) {
-            return;
+        // Try to restore if turning on, but always call the service
+        const shouldTryRestore = nextState && (compactRestoreScope === 'individual' || isGroupedCompactCard);
+        if (shouldTryRestore && restoreRememberedControllerState(compactRestoreScope, compactRestoreEntityId)) {
+            // State was restored, don't override it
+        } else {
+            // Always ensure service is called
+            callLightService(hass, toggleTargetEntityId, nextState);
         }
-
-        callLightService(hass, toggleTargetEntityId, nextState);
     }, [
         controlScope,
         controlledLightEntityId,
@@ -1697,12 +1709,11 @@ export function CardApp({
         ensureGroupRelativeLayout,
         effectiveControlScope,
         groupLight,
-        groupedLightIds.length,
+        groupedLightIds,
         hass,
         lastLitGroupRelativeLayout,
         light,
         markInteraction,
-        compactVisibleIsOn,
         rememberLastLitControlSettings,
         rememberLastLitGroupRelativeLayout,
         restoreRememberedControllerState,
@@ -1741,7 +1752,7 @@ export function CardApp({
         []
     );
 
-    const currentFavoriteSettings: FavoriteSettings = {
+    const currentFavoriteSettings: FavoriteSettings = useMemo(() => ({
         brightness,
         hue,
         isOn,
@@ -1749,7 +1760,7 @@ export function CardApp({
         mode: uiMode,
         saturation,
         selectedColorHue,
-    };
+    }), [brightness, hue, isOn, kelvin, uiMode, saturation, selectedColorHue]);
     const builtinFavoritePresets = buildBuiltinFavoritePresets(new Date(), hass?.states?.['sun.sun']);
 
     const activeFavoriteId =
@@ -1981,12 +1992,18 @@ export function CardApp({
 
     const handleFavoriteDelete = useCallback(
         (favoriteId: string) => {
+            // Remove from UI state immediately to prevent race conditions
+            const favoriteToDelete = favoritePresets.find((favorite) => favorite.id === favoriteId);
+            if (!favoriteToDelete) return;
+
+            const nextFavorites = favoritePresets.filter((favorite) => favorite.id !== favoriteId);
+            
+            // Update UI immediately
+            setFavoritePresets(nextFavorites);
+            saveFavoritePresets(entityId, nextFavorites);
+            
+            // Delete the scene in background without blocking
             void (async () => {
-                const favoriteToDelete = favoritePresets.find((favorite) => favorite.id === favoriteId);
-                if (!favoriteToDelete) return;
-
-                const nextFavorites = favoritePresets.filter((favorite) => favorite.id !== favoriteId);
-
                 try {
                     await deleteScene(hass, favoriteToDelete.sceneEntityId);
                 } catch (error) {
@@ -1997,9 +2014,6 @@ export function CardApp({
                         error,
                     });
                 }
-
-                setFavoritePresets(nextFavorites);
-                saveFavoritePresets(entityId, nextFavorites);
             })();
         },
         [entityId, favoritePresets, hass]
