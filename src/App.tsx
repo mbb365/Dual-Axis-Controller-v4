@@ -105,6 +105,18 @@ function waitForMs(durationMs: number) {
     });
 }
 
+function callQueuedCommandsDirectly(hass: any, commands: QueuedControlCommand[]) {
+    return Promise.all(
+        commands.map((command) =>
+            callLightService(hass, command.entityId, command.turnOn, {
+                brightness: command.brightness,
+                hs_color: command.hsColor,
+                color_temp_kelvin: command.colorTempKelvin,
+            })
+        )
+    );
+}
+
 function cloneFavoriteSettings(settings: FavoriteSettings): FavoriteSettings {
     return {
         ...settings,
@@ -1439,6 +1451,27 @@ export function CardApp({
 
                     queueControlCommand(restoreCommands);
                     flushQueuedControlCommand(true);
+                    void (async () => {
+                        await waitForMs(320);
+
+                        const activeHass = hassRef.current;
+                        const hasLitMembers = restoredLayout.members.some(
+                            (member) => getLightState(activeHass, member.entityId)?.state === 'on'
+                        );
+                        if (hasLitMembers) {
+                            return;
+                        }
+
+                        try {
+                            await callQueuedCommandsDirectly(activeHass, restoreCommands);
+                        } catch (error) {
+                            console.error('[Dual Halo Controller] Failed to reapply group-relative restore', {
+                                entityId,
+                                restoreScope,
+                                error,
+                            });
+                        }
+                    })();
                     return true;
                 }
             }
@@ -1486,9 +1519,70 @@ export function CardApp({
 
             queueControlCommand([restoreCommand]);
             flushQueuedControlCommand(true);
+            void (async () => {
+                await waitForMs(320);
+
+                const activeHass = hassRef.current;
+                if (restoreScope === 'group' && groupedLightIds.length) {
+                    const hasLitMembers = groupedLightIds.some(
+                        (memberEntityId) => getLightState(activeHass, memberEntityId)?.state === 'on'
+                    );
+                    if (hasLitMembers) {
+                        return;
+                    }
+
+                    const memberRestoreCommands = groupedLightIds
+                        .map((memberEntityId) => {
+                            const memberLight = getLightState(activeHass, memberEntityId);
+                            if (!memberLight) return null;
+
+                            return buildQueuedControlCommand(
+                                memberEntityId,
+                                memberLight,
+                                {
+                                    brightness: restoredBrightness,
+                                    hue: restoreSettings.hue,
+                                    saturation: restoreSettings.saturation,
+                                },
+                                restoreSettings.mode
+                            );
+                        })
+                        .filter((command): command is QueuedControlCommand => command != null);
+
+                    if (!memberRestoreCommands.length) {
+                        return;
+                    }
+
+                    try {
+                        await callQueuedCommandsDirectly(activeHass, memberRestoreCommands);
+                    } catch (error) {
+                        console.error('[Dual Halo Controller] Failed to reapply grouped restore', {
+                            entityId,
+                            restoreScope,
+                            error,
+                        });
+                    }
+                    return;
+                }
+
+                if (getLightState(activeHass, targetEntityId)?.state === 'on') {
+                    return;
+                }
+
+                try {
+                    await callQueuedCommandsDirectly(activeHass, [restoreCommand]);
+                } catch (error) {
+                    console.error('[Dual Halo Controller] Failed to reapply restore command', {
+                        entityId,
+                        restoreScope,
+                        targetEntityId,
+                        error,
+                    });
+                }
+            })();
             return true;
         },
-        [entityId, flushQueuedControlCommand, groupLight, groupedLightIds.length, hass, light, lockUiModeSync, queueControlCommand]
+        [entityId, flushQueuedControlCommand, groupLight, groupedLightIds, hass, light, lockUiModeSync, queueControlCommand]
     );
 
     const handleToggle = useCallback(() => {
