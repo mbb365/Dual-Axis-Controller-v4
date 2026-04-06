@@ -80,6 +80,25 @@ function hasLitGroupRelativeMembers(snapshot: GroupRelativeSnapshot | null | und
     return Boolean(snapshot?.members.some((member) => member.brightness > 0));
 }
 
+function favoritePresetsTargetMatch(left: FavoritePreset, right: FavoritePreset) {
+    if (left.scope !== right.scope || left.entityId !== right.entityId) {
+        return false;
+    }
+
+    if (left.scope === 'group' && right.scope === 'group') {
+        if (left.members.length !== right.members.length) {
+            return false;
+        }
+
+        return left.members.every((member, index) => {
+            const other = right.members[index];
+            return !!other && member.entityId === other.entityId && favoriteSettingsMatch(member.settings, other.settings);
+        });
+    }
+
+    return favoriteSettingsMatch(left.settings, right.settings);
+}
+
 function waitForMs(durationMs: number) {
     return new Promise((resolve) => {
         window.setTimeout(resolve, durationMs);
@@ -1941,7 +1960,18 @@ export function CardApp({
                     }
 
                     if (nextFavorite) {
-                        nextFavorites = appendFavoritePreset(nextFavorites, nextFavorite);
+                        const matchesDeletedFavorite = deletedFavorites.some((favorite) =>
+                            favoritePresetsTargetMatch(favorite, nextFavorite as FavoritePreset)
+                        );
+                        const matchesRemainingFavorite = nextFavorites.some((favorite) =>
+                            favoritePresetsTargetMatch(favorite, nextFavorite as FavoritePreset)
+                        );
+
+                        if (matchesDeletedFavorite || matchesRemainingFavorite) {
+                            nextFavorite = null;
+                        } else {
+                            nextFavorites = appendFavoritePreset(nextFavorites, nextFavorite);
+                        }
                     }
                 }
 
