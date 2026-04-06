@@ -144,6 +144,10 @@ export async function activateScene(hass: any, sceneEntityId: string) {
 
 export async function deleteScene(hass: any, sceneEntityId: string) {
     if (!hass) return;
+    if (!sceneEntityId.startsWith('scene.')) return;
+    if (!hass.states?.[sceneEntityId]) {
+        return;
+    }
 
     await hass.callService('scene', 'delete', {
         entity_id: sceneEntityId,

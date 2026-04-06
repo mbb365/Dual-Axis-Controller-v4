@@ -54,7 +54,7 @@ import {
 
 const CONTROL_SEND_INTERVAL_MS = 120;
 const CONTROL_SETTLE_DELAY_MS = 220;
-const DISCO_SEND_INTERVAL_MS = 1100;
+const DISCO_SEND_INTERVAL_MS = 900;
 const UI_MODE_SYNC_LOCK_MS = 1800;
 
 export interface CardAppProps {
@@ -836,17 +836,43 @@ export function CardApp({
     const startDiscoMode = useCallback(() => {
         resetQueuedControlState();
         controlBatchInFlight.current = false;
+        discoBatchInFlight.current = false;
         groupRelativeInteractionSnapshot.current = null;
+        const targetIds = groupedLightIds.length ? groupedLightIds : [activeEntityIdRef.current];
+        const initialCommands = targetIds.map((targetId, index) => {
+            const hueOffset = targetIds.length > 1 ? (360 / targetIds.length) * index : 0;
+            return {
+                entityId: targetId,
+                brightness: 88,
+                hsColor: [Math.round(hueOffset % 360), 100] as [number, number],
+            };
+        });
+
         setUiMode('spectrum');
         setKelvin(null);
-        setHue(0);
+        setHue(initialCommands[0]?.hsColor[0] ?? 0);
         setSaturation(100);
-        setBrightness(88);
+        setBrightness(initialCommands[0]?.brightness ?? 88);
         setIsOn(true);
-        discoStepRef.current = 0;
-        markInteraction(1200);
+        discoStepRef.current = 1;
+        markInteraction(900);
+
+        void Promise.all(
+            initialCommands.map((command) =>
+                callLightService(hassRef.current, command.entityId, true, {
+                    brightness: command.brightness,
+                    hs_color: command.hsColor,
+                })
+            )
+        ).catch((error) => {
+            console.error('[Dual Halo Controller] Failed to start disco mode', {
+                targetIds,
+                error,
+            });
+        });
+
         setIsDiscoMode(true);
-    }, [markInteraction, resetQueuedControlState]);
+    }, [groupedLightIds, markInteraction, resetQueuedControlState]);
 
     const endControlInteraction = useCallback(() => {
         if (interactionTimeout.current) {
@@ -909,7 +935,9 @@ export function CardApp({
             discoStepRef.current += 1;
         };
 
-        applyDiscoFrame();
+        if (discoStepRef.current === 0) {
+            applyDiscoFrame();
+        }
         discoSendInterval.current = window.setInterval(applyDiscoFrame, DISCO_SEND_INTERVAL_MS);
 
         return () => {
@@ -1801,7 +1829,20 @@ export function CardApp({
 
             try {
                 await createSceneDefinition(hass, nextFavorite.sceneEntityId, buildFavoriteSceneEntities(nextFavorite));
-                await Promise.all(removedFavorites.map((favorite) => deleteScene(hass, favorite.sceneEntityId)));
+                const deletionResults = await Promise.allSettled(
+                    removedFavorites.map((favorite) => deleteScene(hass, favorite.sceneEntityId))
+                );
+                deletionResults.forEach((result, index) => {
+                    if (result.status === 'rejected') {
+                        const favorite = removedFavorites[index];
+                        console.warn('[Dual Halo Controller] Failed to delete replaced favourite scene', {
+                            entityId,
+                            sceneEntityId: favorite?.sceneEntityId,
+                            favoriteId: favorite?.id,
+                            error: result.reason,
+                        });
+                    }
+                });
                 setFavoritePresets(nextFavorites);
                 saveFavoritePresets(entityId, nextFavorites);
             } catch (error) {
@@ -1916,9 +1957,20 @@ export function CardApp({
                             buildFavoriteSceneEntities(nextFavorite)
                         );
                     }
-                    await Promise.all(
+                    const deletionResults = await Promise.allSettled(
                         removedFavorites.map((favorite) => deleteScene(hass, favorite.sceneEntityId))
                     );
+                    deletionResults.forEach((result, index) => {
+                        if (result.status === 'rejected') {
+                            const favorite = removedFavorites[index];
+                            console.warn('[Dual Halo Controller] Failed to delete edited favourite scene', {
+                                entityId,
+                                sceneEntityId: favorite?.sceneEntityId,
+                                favoriteId: favorite?.id,
+                                error: result.reason,
+                            });
+                        }
+                    });
                     setFavoritePresets(nextFavorites);
                     saveFavoritePresets(entityId, nextFavorites);
                 } catch (error) {
