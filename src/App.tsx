@@ -55,6 +55,7 @@ import {
 const CONTROL_SEND_INTERVAL_MS = 120;
 const CONTROL_SETTLE_DELAY_MS = 220;
 const DISCO_SEND_INTERVAL_MS = 1100;
+const UI_MODE_SYNC_LOCK_MS = 1800;
 
 export interface CardAppProps {
     hass: any;
@@ -77,6 +78,12 @@ function cloneGroupRelativeSnapshot(snapshot: GroupRelativeSnapshot): GroupRelat
 
 function hasLitGroupRelativeMembers(snapshot: GroupRelativeSnapshot | null | undefined) {
     return Boolean(snapshot?.members.some((member) => member.brightness > 0));
+}
+
+function waitForMs(durationMs: number) {
+    return new Promise((resolve) => {
+        window.setTimeout(resolve, durationMs);
+    });
 }
 
 function cloneFavoriteSettings(settings: FavoriteSettings): FavoriteSettings {
@@ -257,6 +264,7 @@ export function CardApp({
     const pendingFavoriteSceneApply = useRef<{ favorite: FavoritePreset; token: number } | null>(null);
     const lastRequestedFavoriteSceneToken = useRef(0);
     const favoriteMigrationInFlightKey = useRef<string | null>(null);
+    const uiModeSyncLock = useRef<{ mode: 'temperature' | 'spectrum'; expiresAt: number } | null>(null);
     const groupRelativeLayout = useRef<GroupRelativeSnapshot | null>(null);
     const groupRelativeInteractionSnapshot = useRef<GroupRelativeSnapshot | null>(null);
     const lastLitGroupRelativeLayout = useRef<GroupRelativeSnapshot | null>(
@@ -719,6 +727,15 @@ export function CardApp({
         }
 
         setUiMode((previousMode) => {
+            const activeUiModeLock = uiModeSyncLock.current;
+            if (activeUiModeLock) {
+                if (activeUiModeLock.expiresAt > Date.now()) {
+                    return activeUiModeLock.mode;
+                }
+
+                uiModeSyncLock.current = null;
+            }
+
             if (hasExplicitModeSelection.current) {
                 if (previousMode === 'spectrum' && supportsSpectrum) {
                     return 'spectrum';
@@ -780,6 +797,13 @@ export function CardApp({
         interactionTimeout.current = window.setTimeout(() => {
             isUserInteracting.current = false;
         }, delayMs);
+    }, []);
+
+    const lockUiModeSync = useCallback((mode: 'temperature' | 'spectrum', durationMs = UI_MODE_SYNC_LOCK_MS) => {
+        uiModeSyncLock.current = {
+            mode,
+            expiresAt: Date.now() + durationMs,
+        };
     }, []);
 
     const clearInteractionLock = useCallback(() => {
@@ -1063,6 +1087,25 @@ export function CardApp({
         [flushQueuedControlCommand, queueControlCommand]
     );
 
+    const favoriteMatchesLiveState = useCallback(
+        (favorite: FavoritePreset) => {
+            const activeHass = hassRef.current;
+            if (!activeHass) return false;
+
+            if (favorite.scope === 'group' && favorite.members.length) {
+                return favorite.members.every((member) => {
+                    const liveSettings = buildFavoriteSettingsFromLightState(getLightState(activeHass, member.entityId));
+                    return liveSettings ? favoriteSettingsMatch(member.settings, liveSettings) : false;
+                });
+            }
+
+            const targetEntityId = favorite.scope === 'individual' ? favorite.entityId : entityId;
+            const liveSettings = buildFavoriteSettingsFromLightState(getLightState(activeHass, targetEntityId));
+            return liveSettings ? favoriteSettingsMatch(favorite.settings, liveSettings) : false;
+        },
+        [entityId]
+    );
+
     const processPendingFavoriteSceneActivation = useCallback(() => {
         if (favoriteSceneApplyInFlight.current) return;
 
@@ -1077,6 +1120,16 @@ export function CardApp({
 
                     try {
                         await activateScene(hassRef.current, nextActivation.favorite.sceneEntityId);
+                        await waitForMs(250);
+
+                        const hasNewerFavoriteRequest =
+                            pendingFavoriteSceneApply.current != null ||
+                            nextActivation.token !== lastRequestedFavoriteSceneToken.current;
+
+                        if (!hasNewerFavoriteRequest && !favoriteMatchesLiveState(nextActivation.favorite)) {
+                            resetQueuedControlState();
+                            applyFavoriteDirectly(nextActivation.favorite);
+                        }
                     } catch (error) {
                         console.error('[Dual Halo Controller] Failed to activate favourite scene', {
                             entityId,
@@ -1102,7 +1155,7 @@ export function CardApp({
                 }
             }
         })();
-    }, [applyFavoriteDirectly, entityId]);
+    }, [applyFavoriteDirectly, entityId, favoriteMatchesLiveState, resetQueuedControlState]);
 
     const queueFavoriteSceneActivation = useCallback(
         (favorite: FavoritePreset) => {
@@ -1309,6 +1362,7 @@ export function CardApp({
                     controlledLightEntityIdRef.current = null;
                     setControlledLightEntityId(null);
                     setIsOn(true);
+                    lockUiModeSync(restoredLayout.mode);
                     setUiMode(restoredLayout.mode);
                     setBrightness(restoredLayout.averageBrightness);
 
@@ -1355,9 +1409,14 @@ export function CardApp({
             const restoredBrightness = Math.max(1, restoreSettings.brightness);
             setControlScope(restoreScope);
             if (restoreScope === 'individual') {
+                controlledLightEntityIdRef.current = targetEntityId;
                 setControlledLightEntityId(targetEntityId);
+            } else {
+                controlledLightEntityIdRef.current = null;
+                setControlledLightEntityId(null);
             }
             setIsOn(true);
+            lockUiModeSync(restoreSettings.mode);
             setUiMode(restoreSettings.mode);
             setSelectedColorHue(restoreSettings.selectedColorHue);
             setHue(restoreSettings.hue);
@@ -1382,7 +1441,7 @@ export function CardApp({
             flushQueuedControlCommand(true);
             return true;
         },
-        [entityId, flushQueuedControlCommand, groupLight, groupedLightIds.length, hass, light, queueControlCommand]
+        [entityId, flushQueuedControlCommand, groupLight, groupedLightIds.length, hass, light, lockUiModeSync, queueControlCommand]
     );
 
     const handleToggle = useCallback(() => {
@@ -1440,25 +1499,39 @@ export function CardApp({
     ]);
 
     const handleCompactToggle = useCallback(() => {
+        const isGroupedCompactCard = groupedLightIds.length > 0;
+        const compactRestoreScope: ControlScope = isGroupedCompactCard
+            ? controlScope === 'group-relative' && hasLitGroupRelativeMembers(lastLitGroupRelativeLayout.current)
+                ? 'group-relative'
+                : 'group'
+            : effectiveControlScope === 'individual' && controlledLightEntityId
+              ? 'individual'
+              : 'group';
+        const compactRestoreEntityId = compactRestoreScope === 'individual' ? controlledLightEntityId : null;
         const toggleTargetEntityId =
-            effectiveControlScope === 'individual' && controlledLightEntityId ? controlledLightEntityId : entityId;
+            compactRestoreScope === 'individual' && controlledLightEntityId ? controlledLightEntityId : entityId;
         const toggleTargetLight =
             getLightState(hass, toggleTargetEntityId) ??
-            (effectiveControlScope === 'group' ? groupLight : light ?? groupLight);
+            (isGroupedCompactCard ? groupLight ?? light : effectiveControlScope === 'group' ? groupLight : light ?? groupLight);
         if (!toggleTargetLight) return;
 
         stopDiscoMode();
         const nextState = !compactVisibleIsOn;
         if (!nextState) {
-            if (effectiveControlScope === 'group-relative') {
+            if (compactRestoreScope === 'group-relative') {
                 const currentRelativeLayout = ensureGroupRelativeLayout();
                 if (currentRelativeLayout && hasLitGroupRelativeMembers(currentRelativeLayout)) {
                     rememberLastLitGroupRelativeLayout(currentRelativeLayout);
                 }
             } else {
-                const currentTargetSettings = buildFavoriteSettingsFromLightState(toggleTargetLight);
+                const currentTargetSettings = buildFavoriteSettingsFromLightState(
+                    isGroupedCompactCard ? (groupLight ?? toggleTargetLight) : toggleTargetLight
+                );
                 if (currentTargetSettings?.isOn && currentTargetSettings.brightness > 0) {
-                    rememberLastLitControlSettings(toggleTargetEntityId, currentTargetSettings);
+                    rememberLastLitControlSettings(
+                        isGroupedCompactCard ? entityId : toggleTargetEntityId,
+                        currentTargetSettings
+                    );
                 }
             }
         }
@@ -1466,23 +1539,26 @@ export function CardApp({
         markInteraction(1000);
         groupRelativeLayout.current = null;
         groupRelativeInteractionSnapshot.current = null;
-        if (!nextState && effectiveControlScope === 'group-relative') {
+        if (!nextState && compactRestoreScope === 'group-relative') {
             controlledLightEntityIdRef.current = null;
             setControlledLightEntityId(null);
         }
 
-        if (nextState && restoreRememberedControllerState(effectiveControlScope, controlledLightEntityId)) {
+        if (nextState && restoreRememberedControllerState(compactRestoreScope, compactRestoreEntityId)) {
             return;
         }
 
         callLightService(hass, toggleTargetEntityId, nextState);
     }, [
+        controlScope,
         controlledLightEntityId,
         entityId,
         ensureGroupRelativeLayout,
         effectiveControlScope,
         groupLight,
+        groupedLightIds.length,
         hass,
+        lastLitGroupRelativeLayout,
         light,
         markInteraction,
         compactVisibleIsOn,
@@ -1572,6 +1648,7 @@ export function CardApp({
                 targetSettings.mode === 'spectrum' && targetSettings.selectedColorHue != null;
 
             setIsOn(targetSettings.isOn);
+            lockUiModeSync(targetSettings.mode);
             setUiMode(targetSettings.mode);
             setSelectedColorHue(targetSettings.selectedColorHue);
             setHue(targetSettings.hue);
@@ -1664,6 +1741,7 @@ export function CardApp({
             groupedLightIds,
             hass,
             light,
+            lockUiModeSync,
             markInteraction,
             queueControlCommand,
             resetQueuedControlState,
@@ -1882,6 +1960,7 @@ export function CardApp({
             groupRelativeInteractionSnapshot.current = null;
             groupRelativeLayout.current = null;
 
+            lockUiModeSync(favorite.settings.mode);
             setUiMode(favorite.settings.mode);
             setSelectedColorHue(favorite.settings.selectedColorHue);
             setIsOn(favorite.settings.isOn);
@@ -1924,6 +2003,7 @@ export function CardApp({
             clearInteractionLock,
             entityId,
             favoritePresets,
+            lockUiModeSync,
             markInteraction,
             queueFavoriteSceneActivation,
             resetQueuedControlState,
