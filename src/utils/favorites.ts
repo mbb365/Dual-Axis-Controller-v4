@@ -135,6 +135,7 @@ function normalizeFavoriteSettings(settings: FavoriteSettings): FavoriteSettings
         ...settings,
         brightness: clamp(settings.brightness, 0, 100),
         hue: clamp(settings.hue, 0, 360),
+        isOn: typeof settings.isOn === 'boolean' ? settings.isOn : false,
         kelvin: typeof settings.kelvin === 'number' ? settings.kelvin : null,
         saturation: clamp(settings.saturation, 0, 100),
         selectedColorHue: typeof settings.selectedColorHue === 'number' ? settings.selectedColorHue : null,
@@ -745,7 +746,9 @@ function isFavoriteSettings(value: unknown): value is FavoriteSettings {
         typeof candidate.hue === 'number' &&
         typeof candidate.saturation === 'number' &&
         typeof candidate.brightness === 'number' &&
-        typeof candidate.isOn === 'boolean'
+        typeof candidate.isOn === 'boolean' &&
+        (candidate.kelvin === null || typeof candidate.kelvin === 'number') &&
+        (candidate.selectedColorHue === null || typeof candidate.selectedColorHue === 'number')
     );
 }
 
