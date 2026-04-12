@@ -30,6 +30,14 @@ type LightAvailabilityLike = {
     attributes?: Record<string, unknown>;
 };
 
+function hasOwnAttribute(attributes: Record<string, unknown>, key: string) {
+    return Object.prototype.hasOwnProperty.call(attributes, key);
+}
+
+function hasExplicitNullAttribute(attributes: Record<string, unknown>, key: string) {
+    return hasOwnAttribute(attributes, key) && attributes[key] == null;
+}
+
 /** Returns the current state of a light entity from the hass object. */
 export function getLightState(hass: any, entityId: string): LightState | null {
     if (!hass || !entityId) return null;
@@ -48,6 +56,22 @@ function hasStaleOnState(light: LightAvailabilityLike | null | undefined) {
     if (!light || light.state !== 'on') return false;
 
     const attributes = light.attributes ?? {};
+    const explicitlyNullLiveOutput =
+        hasExplicitNullAttribute(attributes, 'color_mode') &&
+        [
+            'brightness',
+            'color_temp',
+            'color_temp_kelvin',
+            'hs_color',
+            'rgb_color',
+            'xy_color',
+            'effect',
+        ].some((key) => hasExplicitNullAttribute(attributes, key));
+
+    if (explicitlyNullLiveOutput) {
+        return true;
+    }
+
     const supportedColorModes = Array.isArray(attributes.supported_color_modes)
         ? attributes.supported_color_modes.filter((mode): mode is string => typeof mode === 'string')
         : [];

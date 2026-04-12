@@ -106,6 +106,34 @@ function waitForMs(durationMs: number) {
     });
 }
 
+function buildLightStateSignature(light: ReturnType<typeof getLightState>) {
+    if (!light) return 'missing';
+
+    const attributes = light.attributes ?? {};
+    const hsColor = Array.isArray(attributes.hs_color) ? attributes.hs_color.join(',') : `${attributes.hs_color ?? ''}`;
+    const rgbColor = Array.isArray((attributes as { rgb_color?: unknown }).rgb_color)
+        ? ((attributes as { rgb_color?: number[] }).rgb_color ?? []).join(',')
+        : `${(attributes as { rgb_color?: unknown }).rgb_color ?? ''}`;
+    const xyColor = Array.isArray((attributes as { xy_color?: unknown }).xy_color)
+        ? ((attributes as { xy_color?: number[] }).xy_color ?? []).join(',')
+        : `${(attributes as { xy_color?: unknown }).xy_color ?? ''}`;
+
+    return [
+        light.entity_id,
+        light.state,
+        `${attributes.available ?? ''}`,
+        `${attributes.reachable ?? ''}`,
+        `${attributes.brightness ?? ''}`,
+        `${attributes.color_mode ?? ''}`,
+        `${attributes.color_temp ?? ''}`,
+        `${attributes.color_temp_kelvin ?? ''}`,
+        hsColor,
+        rgbColor,
+        xyColor,
+        `${(attributes as { effect?: unknown }).effect ?? ''}`,
+    ].join('|');
+}
+
 function callQueuedCommandsDirectly(hass: any, commands: QueuedControlCommand[]) {
     return Promise.all(
         commands.map((command) =>
@@ -298,6 +326,7 @@ export function CardApp({
     const favoriteMigrationInFlightKey = useRef<string | null>(null);
     const uiModeSyncLock = useRef<{ mode: 'temperature' | 'spectrum'; expiresAt: number } | null>(null);
     const groupRelativeLayout = useRef<GroupRelativeSnapshot | null>(null);
+    const groupRelativeLayoutStateSignature = useRef<string | null>(null);
     const groupRelativeInteractionSnapshot = useRef<GroupRelativeSnapshot | null>(null);
     const lastLitGroupRelativeLayout = useRef<GroupRelativeSnapshot | null>(
         hydrateStoredGroupRelativeLayout(initialControllerSession?.lastLitGroupRelativeLayout ?? null, hass, groupedLightIds)
@@ -325,6 +354,11 @@ export function CardApp({
     const [loadedControllerSessionEntityId, setLoadedControllerSessionEntityId] = useState(entityId);
 
     const groupedLights: GroupedLightOption[] = buildGroupedLights(hass, groupedLightIds);
+    const groupLightStateSignature = buildLightStateSignature(groupLight);
+    const activeLightStateSignature = buildLightStateSignature(light);
+    const groupedLightStateSignature = groupedLightIds
+        .map((memberId) => `${memberId}:${buildLightStateSignature(getLightState(hass, memberId))}`)
+        .join('|');
     const isDarkMode = Boolean(hass?.themes?.darkMode);
     const groupedLightIdsKey = groupedLightIds.join('|');
     const sharedFavoriteSceneSignature = Object.keys(hass?.states ?? {})
@@ -443,23 +477,28 @@ export function CardApp({
 
         if (!snapshot) {
             groupRelativeLayout.current = null;
+            groupRelativeLayoutStateSignature.current = null;
             return null;
         }
 
         groupRelativeLayout.current = snapshot;
+        groupRelativeLayoutStateSignature.current = groupedLightStateSignature;
         if (hasLitGroupRelativeMembers(snapshot)) {
             rememberLastLitGroupRelativeLayout(snapshot);
         }
         return snapshot;
-    }, [groupedLightIds, hass, rememberLastLitGroupRelativeLayout, selectedColorHue, uiMode]);
+    }, [groupedLightIds, groupedLightStateSignature, hass, rememberLastLitGroupRelativeLayout, selectedColorHue, uiMode]);
 
     const ensureGroupRelativeLayout = useCallback(() => {
-        if (groupRelativeLayout.current?.mode === uiMode) {
+        if (
+            groupRelativeLayout.current?.mode === uiMode &&
+            groupRelativeLayoutStateSignature.current === groupedLightStateSignature
+        ) {
             return groupRelativeLayout.current;
         }
 
         return buildGroupRelativeLayout();
-    }, [buildGroupRelativeLayout, uiMode]);
+    }, [buildGroupRelativeLayout, groupedLightStateSignature, uiMode]);
 
     useEffect(() => {
         activeEntityIdRef.current = activeEntityId;
@@ -614,6 +653,7 @@ export function CardApp({
 
     useEffect(() => {
         groupRelativeLayout.current = null;
+        groupRelativeLayoutStateSignature.current = null;
         groupRelativeInteractionSnapshot.current = null;
     }, [entityId, groupedLightIds.join('|'), uiMode]);
 
@@ -804,13 +844,14 @@ export function CardApp({
         });
     }, [
         activeEntityId,
+        activeLightStateSignature,
         effectiveControlScope,
         ensureGroupRelativeLayout,
-        groupLight,
+        groupLightStateSignature,
         groupedLightIds,
+        groupedLightStateSignature,
         hass,
         isDiscoMode,
-        light,
         controlledLightEntityId,
         supportsSpectrum,
         supportsTemperature,
