@@ -12,7 +12,10 @@ export interface LightState {
         brightness?: number;
         available?: boolean;
         reachable?: boolean;
+        effect?: string | null;
         hs_color?: [number, number];
+        rgb_color?: [number, number, number] | null;
+        xy_color?: [number, number] | null;
         color_temp?: number;
         color_temp_kelvin?: number;
         color_mode?: string;
@@ -41,8 +44,35 @@ export function isLightAvailable(light: LightAvailabilityLike | null | undefined
     return true;
 }
 
+function hasStaleOnState(light: LightAvailabilityLike | null | undefined) {
+    if (!light || light.state !== 'on') return false;
+
+    const attributes = light.attributes ?? {};
+    const supportedColorModes = Array.isArray(attributes.supported_color_modes)
+        ? attributes.supported_color_modes.filter((mode): mode is string => typeof mode === 'string')
+        : [];
+    const expectsLiveOutputState =
+        supportedColorModes.length === 0 ||
+        supportedColorModes.some((mode) => mode !== 'onoff');
+
+    if (!expectsLiveOutputState) {
+        return false;
+    }
+
+    return (
+        attributes.brightness == null &&
+        attributes.color_mode == null &&
+        attributes.color_temp == null &&
+        attributes.color_temp_kelvin == null &&
+        attributes.hs_color == null &&
+        attributes.rgb_color == null &&
+        attributes.xy_color == null &&
+        attributes.effect == null
+    );
+}
+
 export function isLightOn(light: LightAvailabilityLike | null | undefined) {
-    return Boolean(light && isLightAvailable(light) && light.state === 'on');
+    return Boolean(light && isLightAvailable(light) && light.state === 'on' && !hasStaleOnState(light));
 }
 
 /** Calls light.turn_on or light.turn_off via the hass API. */
