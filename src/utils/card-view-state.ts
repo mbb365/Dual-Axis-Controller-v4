@@ -1,6 +1,6 @@
 import type { GroupedLightOption } from '../components/CompactCard';
 import type { HaloMarker } from '../components/Halo';
-import { getLightState } from '../services/ha-connection';
+import { getLightState, isLightOn } from '../services/ha-connection';
 import {
     controlValuesFromPosition,
     formatGroupedLightValue,
@@ -30,7 +30,7 @@ export function buildGroupedAggregateControlState(
                 : xFractionFromHueSat(values.hue, values.saturation, uiMode);
 
         return {
-            isOn: fallbackLight.state === 'on',
+            isOn: isLightOn(fallbackLight),
             brightness: values.brightness,
             hue: uiMode === 'spectrum' && lockedSpectrumHue != null ? lockedSpectrumHue : values.hue,
             saturation: uiMode === 'spectrum' && lockedSpectrumHue != null ? Math.round(x * 100) : values.saturation,
@@ -51,7 +51,7 @@ export function buildGroupedAggregateControlState(
 
             const values = getMarkerControlValues(memberState, uiMode);
             return {
-                isOn: memberState.state === 'on',
+                isOn: isLightOn(memberState),
                 brightness: values.brightness,
                 x:
                     uiMode === 'spectrum' && lockedSpectrumHue != null
@@ -109,7 +109,7 @@ export function buildGroupedLights(hass: HassLike, groupedLightIds: string[]): G
 
             return {
                 entityId: memberId,
-                isOn: memberState.state === 'on',
+                isOn: isLightOn(memberState),
                 name: memberState.attributes.friendly_name || memberId,
                 previewBrightness: previewValues.brightness,
                 previewHue: previewValues.hue,
@@ -153,7 +153,7 @@ export function buildGroupedLightMarkers(
 
         markers.push({
             entityId: memberId,
-            isOn: memberState.state === 'on',
+            isOn: isLightOn(memberState),
             isActive: controlScope === 'individual' && controlledLightEntityId === memberId,
             ...(uiMode === 'spectrum' && lockedSpectrumHue != null
                 ? {

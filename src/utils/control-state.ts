@@ -1,5 +1,5 @@
 import type { HaloMarker } from '../components/Halo';
-import { getLightState } from '../services/ha-connection';
+import { getLightState, isLightOn } from '../services/ha-connection';
 import {
     TEMPERATURE_WARM_HUE,
     temperatureValuesToXFraction,
@@ -50,9 +50,10 @@ export function formatGroupedLightValue(
         };
     } | undefined
 ) {
-    if (!state || state.state !== 'on') return 'Off';
-    if (state.attributes?.brightness == null) return 'On';
-    return `${Math.round((state.attributes.brightness / 255) * 100)}%`;
+    if (!isLightOn(state)) return 'Off';
+    const brightness = state?.attributes?.brightness;
+    if (brightness == null) return 'On';
+    return `${Math.round((brightness / 255) * 100)}%`;
 }
 
 export function getBrightnessPercent(
@@ -63,9 +64,10 @@ export function getBrightnessPercent(
         };
     } | null | undefined
 ) {
-    if (!state || state.state !== 'on') return 0;
-    if (state.attributes?.brightness == null) return 100;
-    return Math.round((state.attributes.brightness / 255) * 100);
+    if (!isLightOn(state)) return 0;
+    const brightness = state?.attributes?.brightness;
+    if (brightness == null) return 100;
+    return Math.round((brightness / 255) * 100);
 }
 
 export function getMarkerControlValues(
@@ -73,7 +75,7 @@ export function getMarkerControlValues(
     mode: 'temperature' | 'spectrum'
 ): Pick<HaloMarker, 'brightness' | 'hue' | 'saturation'> {
     const brightness = getBrightnessPercent(state);
-    if (!state || state.state !== 'on') {
+    if (!isLightOn(state)) {
         return {
             brightness,
             hue: mode === 'temperature' ? TEMPERATURE_WARM_HUE : 0,
@@ -81,14 +83,16 @@ export function getMarkerControlValues(
         };
     }
 
+    const activeState = state as NonNullable<LightState>;
+
     if (mode === 'temperature') {
-        if (state.attributes.color_temp_kelvin != null || state.attributes.color_temp != null) {
+        if (activeState.attributes.color_temp_kelvin != null || activeState.attributes.color_temp != null) {
             const nextKelvin =
-                state.attributes.color_temp_kelvin ||
-                Math.round(1000000 / state.attributes.color_temp!);
-            const minMireds = state.attributes.min_mireds || 153;
-            const maxMireds = state.attributes.max_mireds || 500;
-            const mireds = state.attributes.color_temp || 1000000 / nextKelvin;
+                activeState.attributes.color_temp_kelvin ||
+                Math.round(1000000 / activeState.attributes.color_temp!);
+            const minMireds = activeState.attributes.min_mireds || 153;
+            const maxMireds = activeState.attributes.max_mireds || 500;
+            const mireds = activeState.attributes.color_temp || 1000000 / nextKelvin;
             const x = Math.max(0, Math.min(1, (mireds - minMireds) / (maxMireds - minMireds)));
             return {
                 brightness,
@@ -96,23 +100,26 @@ export function getMarkerControlValues(
             };
         }
 
-        if (state.attributes.hs_color) {
-            const [hue, saturation] = state.attributes.hs_color;
+        if (activeState.attributes.hs_color) {
+            const [hue, saturation] = activeState.attributes.hs_color;
             return { brightness, hue, saturation };
         }
 
         return { brightness, hue: TEMPERATURE_WARM_HUE, saturation: 0 };
     }
 
-    const isCurrentlyTemperatureMode = state.attributes.color_mode === 'color_temp';
+    const isCurrentlyTemperatureMode = activeState.attributes.color_mode === 'color_temp';
 
-    if (isCurrentlyTemperatureMode && (state.attributes.color_temp_kelvin != null || state.attributes.color_temp != null)) {
+    if (
+        isCurrentlyTemperatureMode &&
+        (activeState.attributes.color_temp_kelvin != null || activeState.attributes.color_temp != null)
+    ) {
         const nextKelvin =
-            state.attributes.color_temp_kelvin ||
-            Math.round(1000000 / state.attributes.color_temp!);
-        const minMireds = state.attributes.min_mireds || 153;
-        const maxMireds = state.attributes.max_mireds || 500;
-        const mireds = state.attributes.color_temp || 1000000 / nextKelvin;
+            activeState.attributes.color_temp_kelvin ||
+            Math.round(1000000 / activeState.attributes.color_temp!);
+        const minMireds = activeState.attributes.min_mireds || 153;
+        const maxMireds = activeState.attributes.max_mireds || 500;
+        const mireds = activeState.attributes.color_temp || 1000000 / nextKelvin;
         const x = Math.max(0, Math.min(1, (mireds - minMireds) / (maxMireds - minMireds)));
         return {
             brightness,
@@ -120,18 +127,18 @@ export function getMarkerControlValues(
         };
     }
 
-    if (state.attributes.hs_color) {
-        const [hue, saturation] = state.attributes.hs_color;
+    if (activeState.attributes.hs_color) {
+        const [hue, saturation] = activeState.attributes.hs_color;
         return { brightness, hue, saturation };
     }
 
-    if (state.attributes.color_temp_kelvin != null || state.attributes.color_temp != null) {
+    if (activeState.attributes.color_temp_kelvin != null || activeState.attributes.color_temp != null) {
         const nextKelvin =
-            state.attributes.color_temp_kelvin ||
-            Math.round(1000000 / state.attributes.color_temp!);
-        const minMireds = state.attributes.min_mireds || 153;
-        const maxMireds = state.attributes.max_mireds || 500;
-        const mireds = state.attributes.color_temp || 1000000 / nextKelvin;
+            activeState.attributes.color_temp_kelvin ||
+            Math.round(1000000 / activeState.attributes.color_temp!);
+        const minMireds = activeState.attributes.min_mireds || 153;
+        const maxMireds = activeState.attributes.max_mireds || 500;
+        const mireds = activeState.attributes.color_temp || 1000000 / nextKelvin;
         const x = Math.max(0, Math.min(1, (mireds - minMireds) / (maxMireds - minMireds)));
         return {
             brightness,

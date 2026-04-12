@@ -8,6 +8,7 @@ import {
     createSceneDefinition,
     deleteScene,
     getLightState,
+    isLightOn,
 } from './services/ha-connection';
 import { usePopupSheet } from './hooks/use-popup-sheet';
 import {
@@ -145,7 +146,7 @@ function buildFavoriteSettingsFromLightState(
     return {
         brightness: markerValues.brightness,
         hue: markerValues.hue,
-        isOn: targetLight.state === 'on' && markerValues.brightness > 0,
+        isOn: isLightOn(targetLight) && markerValues.brightness > 0,
         kelvin: resolvedKelvin,
         mode: inferredMode,
         saturation: markerValues.saturation,
@@ -718,7 +719,7 @@ export function CardApp({
         const nextLight = light ?? groupLight;
         if (!nextLight || isUserInteracting.current || isDiscoMode) return;
 
-        setIsOn(nextLight.state === 'on');
+        setIsOn(isLightOn(nextLight));
 
         if (nextLight.attributes.brightness !== undefined) {
             setBrightness(Math.round((nextLight.attributes.brightness / 255) * 100));
@@ -1452,8 +1453,8 @@ export function CardApp({
                         await waitForMs(320);
 
                         const activeHass = hassRef.current;
-                        const hasLitMembers = restoredLayout.members.some(
-                            (member) => getLightState(activeHass, member.entityId)?.state === 'on'
+                        const hasLitMembers = restoredLayout.members.some((member) =>
+                            isLightOn(getLightState(activeHass, member.entityId))
                         );
                         if (hasLitMembers) {
                             return;
@@ -1521,8 +1522,8 @@ export function CardApp({
 
                 const activeHass = hassRef.current;
                 if (restoreScope === 'group' && groupedLightIds.length) {
-                    const hasLitMembers = groupedLightIds.some(
-                        (memberEntityId) => getLightState(activeHass, memberEntityId)?.state === 'on'
+                    const hasLitMembers = groupedLightIds.some((memberEntityId) =>
+                        isLightOn(getLightState(activeHass, memberEntityId))
                     );
                     if (hasLitMembers) {
                         return;
@@ -1562,7 +1563,7 @@ export function CardApp({
                     return;
                 }
 
-                if (getLightState(activeHass, targetEntityId)?.state === 'on') {
+                if (isLightOn(getLightState(activeHass, targetEntityId))) {
                     return;
                 }
 
@@ -1589,7 +1590,7 @@ export function CardApp({
         const targetEntityId =
             effectiveControlScope === 'individual' && controlledLightEntityId ? controlledLightEntityId : entityId;
         const actualLightState = getLightState(hass, targetEntityId);
-        const actualIsOn = actualLightState?.state === 'on';
+        const actualIsOn = isLightOn(actualLightState);
         const nextState = !actualIsOn;  // Use actual HA state, not React state
         
         const currentRelativeLayout = effectiveControlScope === 'group-relative' ? ensureGroupRelativeLayout() : null;
@@ -1665,7 +1666,7 @@ export function CardApp({
 
         stopDiscoMode();
         // Use actual HA state instead of computed React state for consistency
-        const actualIsOn = toggleTargetLight?.state === 'on';
+        const actualIsOn = isLightOn(toggleTargetLight);
         const nextState = !actualIsOn;
         if (!nextState) {
             if (compactRestoreScope === 'group-relative') {
@@ -2235,7 +2236,7 @@ export function CardApp({
             groupRelativeLayout.current = null;
             groupRelativeInteractionSnapshot.current = null;
 
-            void callLightService(hass, nextEntityId, targetLight.state !== 'on');
+            void callLightService(hass, nextEntityId, !isLightOn(targetLight));
         },
         [hass, stopDiscoMode]
     );

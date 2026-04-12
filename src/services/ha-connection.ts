@@ -10,6 +10,8 @@ export interface LightState {
         entity_id?: string[];
         lights?: string[];
         brightness?: number;
+        available?: boolean;
+        reachable?: boolean;
         hs_color?: [number, number];
         color_temp?: number;
         color_temp_kelvin?: number;
@@ -20,10 +22,27 @@ export interface LightState {
     };
 }
 
+type LightAvailabilityLike = {
+    state?: string;
+    attributes?: Record<string, unknown>;
+};
+
 /** Returns the current state of a light entity from the hass object. */
 export function getLightState(hass: any, entityId: string): LightState | null {
     if (!hass || !entityId) return null;
     return hass.states[entityId] || null;
+}
+
+export function isLightAvailable(light: LightAvailabilityLike | null | undefined) {
+    if (!light) return false;
+    if (light.state === 'unavailable' || light.state === 'unknown') return false;
+    if (light.attributes?.available === false) return false;
+    if (light.attributes?.reachable === false) return false;
+    return true;
+}
+
+export function isLightOn(light: LightAvailabilityLike | null | undefined) {
+    return Boolean(light && isLightAvailable(light) && light.state === 'on');
 }
 
 /** Calls light.turn_on or light.turn_off via the hass API. */
