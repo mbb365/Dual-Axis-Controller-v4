@@ -4,8 +4,6 @@ import type { HaloIndicatorSelection, HaloMarker, HaloVisualStyle } from './Halo
 import type { BuiltinFavoritePreset, FavoritePreset } from '../utils/favorites';
 import { CompactView } from './compact-card/CompactView';
 import {
-    buildCompactBackground,
-    buildGroupedCompactBackground,
     buildIconBackground,
     buildIconForeground,
     formatStatus,
@@ -143,9 +141,6 @@ export function CompactCard({
             : isOn
               ? `${Math.round(brightness)}% at ${leadingValue}`
               : 'Off';
-    const compactBackground =
-        buildGroupedCompactBackground(groupedLights, isDarkMode) ??
-        buildCompactBackground(isOn, hue, saturation, brightness, uiMode, isDarkMode);
     const displayExpandedPrimaryName = expandedPrimaryName ?? lightName;
     const displayExpandedSecondaryName =
         expandedSecondaryName && expandedSecondaryName !== displayExpandedPrimaryName ? expandedSecondaryName : null;
@@ -237,9 +232,6 @@ export function CompactCard({
                     isDarkMode={isDarkMode}
                     lightName={lightName}
                     isOn={isOn}
-                    compactBackground={compactBackground}
-                    iconBackground={buildIconBackground(isOn, hue, saturation, brightness, uiMode)}
-                    iconForeground={buildIconForeground(isOn, saturation, brightness, uiMode)}
                     statusText={statusText}
                     onPointerDown={handlePointerDown}
                     onPointerUp={handlePointerEnd}

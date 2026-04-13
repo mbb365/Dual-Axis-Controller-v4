@@ -182,33 +182,6 @@ function buildFavoriteSettingsFromLightState(
     };
 }
 
-function countSeparatedGroupedLights(hass: any, groupedLightIds: string[]) {
-    const memberSettings = groupedLightIds
-        .map((memberId) => buildFavoriteSettingsFromLightState(getLightState(hass, memberId)))
-        .filter((settings): settings is FavoriteSettings => settings != null);
-
-    if (memberSettings.length <= 1) {
-        return 0;
-    }
-
-    const clusters: Array<{ representative: FavoriteSettings; count: number }> = [];
-    for (const settings of memberSettings) {
-        const existingCluster = clusters.find((cluster) => favoriteSettingsMatch(cluster.representative, settings));
-        if (existingCluster) {
-            existingCluster.count += 1;
-            continue;
-        }
-
-        clusters.push({
-            representative: settings,
-            count: 1,
-        });
-    }
-
-    const dominantClusterSize = clusters.reduce((largest, cluster) => Math.max(largest, cluster.count), 0);
-    return Math.max(0, memberSettings.length - dominantClusterSize);
-}
-
 function serializeGroupRelativeSnapshot(snapshot: GroupRelativeSnapshot | null): StoredGroupRelativeLayout | null {
     if (!snapshot) return null;
 
@@ -365,9 +338,7 @@ export function CardApp({
         .filter((stateEntityId) => isSharedFavoriteSceneEntityId(stateEntityId, entityId))
         .sort()
         .join('|');
-    const separatedGroupedLightCount = groupedLightIds.length ? countSeparatedGroupedLights(hass, groupedLightIds) : 0;
-    const shouldForceGroupRelative = separatedGroupedLightCount >= 2;
-    const effectiveControlScope: ControlScope = shouldForceGroupRelative ? 'group-relative' : controlScope;
+    const effectiveControlScope: ControlScope = controlScope;
     const currentControlRestoreKey =
         effectiveControlScope === 'individual' && controlledLightEntityId ? controlledLightEntityId : entityId;
     const {
@@ -499,6 +470,48 @@ export function CardApp({
 
         return buildGroupRelativeLayout();
     }, [buildGroupRelativeLayout, groupedLightStateSignature, uiMode]);
+
+    const buildAnchoredGroupRelativeLayout = useCallback(() => {
+        const rememberedLayout = lastLitGroupRelativeLayout.current;
+        const fallbackLight = groupLight ?? light;
+
+        if (!rememberedLayout || !hasLitGroupRelativeMembers(rememberedLayout) || !fallbackLight || !groupedLightIds.length) {
+            return null;
+        }
+
+        if (
+            rememberedLayout.members.length !== groupedLightIds.length ||
+            rememberedLayout.members.some((member) => !groupedLightIds.includes(member.entityId))
+        ) {
+            return null;
+        }
+
+        const aggregate = buildGroupedAggregateControlState(
+            hass,
+            groupedLightIds,
+            uiMode,
+            fallbackLight,
+            uiMode === 'spectrum' ? selectedColorHue : null
+        );
+        const anchorX =
+            uiMode === 'spectrum' && selectedColorHue != null
+                ? Math.max(0, Math.min(1, aggregate.saturation / 100))
+                : xFractionFromHueSat(aggregate.hue, aggregate.saturation, uiMode);
+        const deltaX = anchorX - rememberedLayout.averageX;
+        const deltaBrightness = aggregate.brightness - rememberedLayout.averageBrightness;
+
+        return {
+            mode: uiMode,
+            averageX: anchorX,
+            averageBrightness: aggregate.brightness,
+            members: rememberedLayout.members.map((member) => ({
+                ...member,
+                light: getLightState(hass, member.entityId) ?? member.light,
+                x: member.x + deltaX,
+                brightness: member.brightness + deltaBrightness,
+            })),
+        } satisfies GroupRelativeSnapshot;
+    }, [groupLight, groupedLightIds, hass, light, selectedColorHue, uiMode]);
 
     useEffect(() => {
         activeEntityIdRef.current = activeEntityId;
@@ -683,22 +696,6 @@ export function CardApp({
         selectedColorHue,
         uiMode,
     ]);
-
-    useEffect(() => {
-        if (!groupedLightIds.length || !shouldForceGroupRelative) {
-            return;
-        }
-
-        if (isUserInteracting.current || isDiscoMode) {
-            return;
-        }
-
-        if (controlScope !== 'group-relative') {
-            groupRelativeLayout.current = null;
-            groupRelativeInteractionSnapshot.current = null;
-            setControlScope('group-relative');
-        }
-    }, [controlScope, groupedLightIds.length, isDiscoMode, shouldForceGroupRelative]);
 
     useEffect(() => {
         if (effectiveControlScope === 'group-relative' && groupedLightIds.length) {
@@ -2248,7 +2245,7 @@ export function CardApp({
         activeEntityIdRef.current = nextEntityId;
         stopDiscoMode();
 
-        if (controlScope === 'group-relative' || shouldForceGroupRelative) {
+        if (controlScope === 'group-relative') {
             setControlScope('group-relative');
             controlledLightEntityIdRef.current = nextEntityId;
             setControlledLightEntityId(nextEntityId);
@@ -2258,7 +2255,7 @@ export function CardApp({
         setControlScope('individual');
         controlledLightEntityIdRef.current = nextEntityId;
         setControlledLightEntityId(nextEntityId);
-    }, [controlScope, shouldForceGroupRelative, stopDiscoMode]);
+    }, [controlScope, stopDiscoMode]);
 
     const handleGroupRelativeFormationSelect = useCallback(() => {
         stopDiscoMode();
@@ -2284,13 +2281,22 @@ export function CardApp({
 
     const handleControlScopeChange = useCallback((nextScope: 'group' | 'group-relative') => {
         stopDiscoMode();
-        const resolvedNextScope = shouldForceGroupRelative ? 'group-relative' : nextScope;
+        const resolvedNextScope = nextScope;
 
         if (resolvedNextScope === 'group-relative') {
-            const relativeLayout = ensureGroupRelativeLayout();
             controlledLightEntityIdRef.current = null;
             setControlledLightEntityId(null);
+
+            const anchoredRelativeLayout = buildAnchoredGroupRelativeLayout();
+            const relativeLayout = anchoredRelativeLayout ?? ensureGroupRelativeLayout();
             if (relativeLayout) {
+                groupRelativeLayout.current = relativeLayout;
+                groupRelativeLayoutStateSignature.current = groupedLightStateSignature;
+                groupRelativeInteractionSnapshot.current = null;
+                if (hasLitGroupRelativeMembers(relativeLayout)) {
+                    rememberLastLitGroupRelativeLayout(relativeLayout);
+                }
+
                 setIsOn(relativeLayout.members.some((member) => member.brightness > 0));
                 if (uiMode === 'spectrum' && selectedColorHue != null) {
                     setHue(selectedColorHue);
@@ -2306,11 +2312,91 @@ export function CardApp({
                 }
                 setBrightness(relativeLayout.averageBrightness);
                 setKelvin(uiMode === 'temperature' ? kelvinFromXPosition(relativeLayout.averageX, groupLight ?? light) : null);
+
+                const relativeCommands = anchoredRelativeLayout
+                    ? relativeLayout.members.map((member) =>
+                          buildQueuedControlCommand(
+                              member.entityId,
+                              getLightState(hass, member.entityId) ?? member.light,
+                              controlValuesFromPosition(member.x, member.brightness, uiMode),
+                              uiMode
+                          )
+                      )
+                    : [];
+
+                if (relativeCommands.length) {
+                    queueControlCommand(relativeCommands);
+                    flushQueuedControlCommand(true);
+                }
             }
+            setControlScope('group-relative');
+            return;
         }
 
-        setControlScope(resolvedNextScope);
-    }, [ensureGroupRelativeLayout, groupLight, light, selectedColorHue, shouldForceGroupRelative, stopDiscoMode, uiMode]);
+        const currentRelativeLayout = effectiveControlScope === 'group-relative' ? ensureGroupRelativeLayout() : null;
+        if (currentRelativeLayout && hasLitGroupRelativeMembers(currentRelativeLayout)) {
+            rememberLastLitGroupRelativeLayout(currentRelativeLayout);
+        }
+
+        controlledLightEntityIdRef.current = null;
+        setControlledLightEntityId(null);
+        setControlScope('group');
+        groupRelativeInteractionSnapshot.current = null;
+        groupRelativeLayout.current = null;
+        clearInteractionLock();
+        resetQueuedControlState();
+        markInteraction(900);
+
+        if (!groupedLightIds.length) {
+            return;
+        }
+
+        const groupCommands = groupedLightIds
+            .map((memberEntityId) => {
+                const memberLight = getLightState(hass, memberEntityId) ?? groupLight ?? light;
+                if (!memberLight) return null;
+
+                return buildQueuedControlCommand(
+                    memberEntityId,
+                    memberLight,
+                    {
+                        brightness,
+                        hue,
+                        saturation,
+                    },
+                    uiMode
+                );
+            })
+            .filter((command): command is QueuedControlCommand => command != null);
+
+        if (!groupCommands.length) {
+            return;
+        }
+
+        queueControlCommand(groupCommands);
+        flushQueuedControlCommand(true);
+    }, [
+        brightness,
+        buildAnchoredGroupRelativeLayout,
+        clearInteractionLock,
+        effectiveControlScope,
+        ensureGroupRelativeLayout,
+        flushQueuedControlCommand,
+        groupLight,
+        groupedLightIds,
+        groupedLightStateSignature,
+        hass,
+        hue,
+        light,
+        markInteraction,
+        queueControlCommand,
+        rememberLastLitGroupRelativeLayout,
+        resetQueuedControlState,
+        saturation,
+        selectedColorHue,
+        stopDiscoMode,
+        uiMode,
+    ]);
 
     if (!groupLight) {
         return (

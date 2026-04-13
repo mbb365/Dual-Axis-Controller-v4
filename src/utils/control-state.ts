@@ -35,10 +35,28 @@ export interface GroupRelativeSnapshot {
     members: GroupRelativeMemberSnapshot[];
 }
 
+function normalizeGroupedMemberIds(value: string[] | string | undefined) {
+    if (Array.isArray(value)) {
+        return value;
+    }
+
+    if (typeof value !== 'string') {
+        return [];
+    }
+
+    return value
+        .split(',')
+        .map((memberId) => memberId.trim())
+        .filter(Boolean);
+}
+
 export function getGroupedLightIds(light: LightState) {
     if (!light) return [];
 
-    const memberIds = [...(light.attributes.entity_id ?? []), ...(light.attributes.lights ?? [])];
+    const memberIds = [
+        ...normalizeGroupedMemberIds(light.attributes.entity_id),
+        ...normalizeGroupedMemberIds(light.attributes.lights),
+    ];
     return Array.from(new Set(memberIds.filter((memberId) => memberId.startsWith('light.') && memberId !== light.entity_id)));
 }
 

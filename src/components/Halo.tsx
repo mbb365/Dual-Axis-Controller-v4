@@ -112,6 +112,21 @@ export function Halo({
     indicatorVariant = 'default',
     formationIndicator = null,
 }: HaloProps) {
+    const buildSelection = (
+        nextHue: number,
+        nextSaturation: number,
+        nextBrightness: number,
+        nextMode: 'temperature' | 'spectrum' = mode,
+        nextLockedSpectrumHue: number | null | undefined = lockedSpectrumHue,
+        nextVisualStyle: HaloVisualStyle = visualStyle
+    ): HaloSelection => ({
+        brightness: nextBrightness,
+        hue: nextHue,
+        saturation: nextSaturation,
+        xPercent: xPosFromHueSat(nextHue, nextSaturation, nextMode, nextLockedSpectrumHue, nextVisualStyle),
+        yPercent: yPosFromBrightness(nextBrightness, nextVisualStyle),
+    });
+
     const trackpadRef = useRef<HTMLDivElement>(null);
     const overlayRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
@@ -120,7 +135,12 @@ export function Halo({
     const [dragSourceMarkerId, setDragSourceMarkerId] = useState<string | null>(null);
     const [handoffSelection, setHandoffSelection] = useState<HaloSelection | null>(null);
     const [ghostSelection, setGhostSelection] = useState<HaloGhostIndicator | null>(null);
+    const [displaySelection, setDisplaySelection] = useState<HaloSelection>(() =>
+        buildSelection(hue, saturation, brightness)
+    );
     const pulseIdRef = useRef(0);
+    const displaySelectionRef = useRef(displaySelection);
+    const animationFrameRef = useRef<number | null>(null);
     const lastEmittedSelectionRef = useRef<HaloSelection | null>(null);
     const lastVelocitySampleRef = useRef<HaloVelocitySample | null>(null);
     const overspeedStartedAtRef = useRef<number | null>(null);
@@ -142,11 +162,18 @@ export function Halo({
     useEffect(() => {
         return () => {
             resetSpeedRuleTracking();
+            if (animationFrameRef.current) {
+                window.cancelAnimationFrame(animationFrameRef.current);
+            }
             if (handoffTimeoutRef.current) {
                 window.clearTimeout(handoffTimeoutRef.current);
             }
         };
     }, []);
+
+    useEffect(() => {
+        displaySelectionRef.current = displaySelection;
+    }, [displaySelection]);
 
     useEffect(() => {
         if (!isDiscoMode) return;
@@ -155,19 +182,82 @@ export function Halo({
         setDragSourceMarkerId(null);
         setHandoffSelection(null);
         setGhostSelection(null);
+        const nextSelection = buildSelection(hue, saturation, brightness);
+        setDisplaySelection(nextSelection);
+        displaySelectionRef.current = nextSelection;
         lastEmittedSelectionRef.current = null;
         resetSpeedRuleTracking();
-    }, [isDiscoMode]);
+    }, [brightness, hue, isDiscoMode, lockedSpectrumHue, mode, saturation, visualStyle]);
+
+    useEffect(() => {
+        if (isDragging || isDiscoMode) {
+            return;
+        }
+
+        const nextSelection = buildSelection(hue, saturation, brightness);
+        const currentSelection = displaySelectionRef.current;
+        const movementDelta = Math.hypot(
+            nextSelection.xPercent - currentSelection.xPercent,
+            nextSelection.yPercent - currentSelection.yPercent
+        );
+        const shouldSnap = movementDelta < 0.35 && Math.abs(nextSelection.brightness - currentSelection.brightness) < 0.75;
+
+        if (animationFrameRef.current) {
+            window.cancelAnimationFrame(animationFrameRef.current);
+            animationFrameRef.current = null;
+        }
+
+        if (shouldSnap) {
+            setDisplaySelection(nextSelection);
+            displaySelectionRef.current = nextSelection;
+            return;
+        }
+
+        const startSelection = currentSelection;
+        const startAt = performance.now();
+        const durationMs = 260;
+        const interpolateHue = (from: number, to: number, progress: number) => {
+            const delta = ((((to - from) % 360) + 540) % 360) - 180;
+            return from + delta * progress;
+        };
+
+        const tick = (now: number) => {
+            const progress = Math.min(1, (now - startAt) / durationMs);
+            const easedProgress = 1 - Math.pow(1 - progress, 3);
+            const interpolatedSelection: HaloSelection = {
+                brightness: startSelection.brightness + (nextSelection.brightness - startSelection.brightness) * easedProgress,
+                hue: interpolateHue(startSelection.hue, nextSelection.hue, easedProgress),
+                saturation: startSelection.saturation + (nextSelection.saturation - startSelection.saturation) * easedProgress,
+                xPercent: startSelection.xPercent + (nextSelection.xPercent - startSelection.xPercent) * easedProgress,
+                yPercent: startSelection.yPercent + (nextSelection.yPercent - startSelection.yPercent) * easedProgress,
+            };
+
+            setDisplaySelection(interpolatedSelection);
+            displaySelectionRef.current = interpolatedSelection;
+
+            if (progress < 1) {
+                animationFrameRef.current = window.requestAnimationFrame(tick);
+                return;
+            }
+
+            animationFrameRef.current = null;
+        };
+
+        animationFrameRef.current = window.requestAnimationFrame(tick);
+
+        return () => {
+            if (animationFrameRef.current) {
+                window.cancelAnimationFrame(animationFrameRef.current);
+                animationFrameRef.current = null;
+            }
+        };
+    }, [brightness, hue, isDiscoMode, isDragging, lockedSpectrumHue, mode, saturation, visualStyle]);
 
     useEffect(() => {
         latestSelectionRef.current = dragSelection ?? handoffSelection ?? {
-            brightness,
-            hue,
-            saturation,
-            xPercent: xPosFromHueSat(hue, saturation, mode, lockedSpectrumHue, visualStyle),
-            yPercent: yPosFromBrightness(brightness, visualStyle),
+            ...displaySelectionRef.current,
         };
-    }, [brightness, dragSelection, handoffSelection, hue, lockedSpectrumHue, mode, saturation, visualStyle]);
+    }, [dragSelection, handoffSelection, displaySelection]);
 
     useEffect(() => {
         if (isDragging || isDiscoMode) return;
@@ -446,11 +536,7 @@ export function Halo({
               );
 
     const visibleSelection = dragSelection ?? handoffSelection ?? {
-        brightness,
-        hue,
-        saturation,
-        xPercent: xPosFromHueSat(hue, saturation, mode, lockedSpectrumHue, visualStyle),
-        yPercent: yPosFromBrightness(brightness, visualStyle),
+        ...displaySelection,
     };
     const isBrickStyle = visualStyle === 'pixel';
     const selectedBrickColumn = Math.max(

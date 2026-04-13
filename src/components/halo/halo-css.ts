@@ -309,6 +309,7 @@ export const HALO_CSS = `
     transition:
         left 340ms cubic-bezier(0.22, 0.68, 0.2, 1),
         top 340ms cubic-bezier(0.22, 0.68, 0.2, 1),
+        background 220ms ease,
         box-shadow 220ms ease;
 }
 
@@ -407,6 +408,7 @@ export const HALO_CSS = `
     transition:
         left 280ms cubic-bezier(0.22, 0.68, 0.2, 1),
         top 280ms cubic-bezier(0.22, 0.68, 0.2, 1),
+        background 220ms ease,
         transform 220ms ease,
         opacity 220ms ease,
         box-shadow 220ms ease;

@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Halo, type HaloIndicatorSelection, type HaloMarker, type HaloVisualStyle } from '../Halo';
-import { buildTemperatureIndicatorColor } from '../halo/halo-utils';
 import type { GroupedLightOption } from '../CompactCard';
-import type { BuiltinFavoritePreset, FavoritePreset, FavoriteSettings } from '../../utils/favorites';
+import type { BuiltinFavoritePreset, FavoritePreset } from '../../utils/favorites';
 
 interface ExpandedCardProps {
     isDarkMode: boolean;
@@ -91,12 +90,7 @@ function PadStylePreview({ style }: { style: HaloVisualStyle }) {
 function SettingsMenu({
     padVisualStyle,
     onPadVisualStyleChange,
-    isEditingFavorites,
-    onToggleFavoriteEditing,
-}: Pick<ExpandedCardProps, 'padVisualStyle' | 'onPadVisualStyleChange'> & {
-    isEditingFavorites: boolean;
-    onToggleFavoriteEditing: () => void;
-}) {
+}: Pick<ExpandedCardProps, 'padVisualStyle' | 'onPadVisualStyleChange'>) {
     const [isOpen, setIsOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
 
@@ -153,20 +147,6 @@ function SettingsMenu({
                             ))}
                         </div>
                     </div>
-                    <div className="dual-card__settings-section">
-                        <div className="dual-card__settings-label">Favourites</div>
-                        <button
-                            type="button"
-                            className={`dual-card__settings-action ${isEditingFavorites ? 'is-active' : ''}`}
-                            onClick={() => {
-                                onToggleFavoriteEditing();
-                                setIsOpen(false);
-                            }}
-                        >
-                            <ha-icon icon={isEditingFavorites ? 'mdi:check' : 'mdi:pencil'} />
-                            <span>{isEditingFavorites ? 'Done editing presets' : 'Edit presets'}</span>
-                        </button>
-                    </div>
                 </div>
             ) : null}
         </div>
@@ -184,12 +164,14 @@ function ExpandedMetaHeader({
 >) {
     return (
         <div className="dual-card__expanded-header">
-            <div className="dual-card__meta-value dual-card__meta-value--combined">{isOn ? `${leadingValue} at ${Math.round(brightness)}%` : 'Off'}</div>
             {displayExpandedSecondaryName ? (
                 <div className="dual-card__meta-value dual-card__meta-value--name" title={displayExpandedSecondaryName}>
                     {displayExpandedSecondaryName}
                 </div>
             ) : null}
+            <div className="dual-card__meta-value dual-card__meta-value--combined">
+                {isOn ? `${leadingValue} at ${Math.round(brightness)}%` : 'Off'}
+            </div>
         </div>
     );
 }
@@ -249,278 +231,6 @@ function ModeControls({
     );
 }
 
-function favoriteSettingsDisplayColor(settings: FavoriteSettings) {
-    if (!settings.isOn || settings.brightness <= 0) {
-        return 'rgb(148 163 184)';
-    }
-
-    if (settings.mode === 'temperature') {
-        return buildTemperatureIndicatorColor(settings.hue, settings.saturation, Math.max(settings.brightness, 36));
-    }
-
-    const hue = settings.selectedColorHue ?? settings.hue;
-    const saturation = Math.max(52, settings.saturation);
-    const lightness = Math.min(58, 28 + settings.brightness * 0.34);
-    return `hsl(${hue} ${saturation}% ${lightness}%)`;
-}
-
-function favoriteDisplayColor(favorite: FavoritePreset) {
-    return favoriteSettingsDisplayColor(favorite.settings);
-}
-
-function favoriteSettingsPillValue(settings: FavoriteSettings) {
-    if (!settings.isOn || settings.brightness <= 0) {
-        return 'Off';
-    }
-
-    return `${Math.round(settings.brightness)}%`;
-}
-
-function favoritePillValue(favorite: FavoritePreset) {
-    return favoriteSettingsPillValue(favorite.settings);
-}
-
-function builtinFavoritePillValue(favorite: BuiltinFavoritePreset) {
-    return favorite.displayValue;
-}
-
-function FavoriteStrip({
-    favoritePresets,
-    builtinFavoritePresets,
-    activeFavoriteId,
-    brightness,
-    hue,
-    saturation,
-    isOn,
-    uiMode,
-    selectedColorHue,
-    onFavoriteApply,
-    onBuiltinFavoriteApply,
-    onFavoriteDelete,
-    onFavoriteSave,
-    isEditingFavorites,
-    pendingDeletedFavoriteIds,
-    hasPendingFavoriteSave,
-    onFavoriteDeleteStage,
-    onFavoriteSaveStage,
-    onFavoriteEditCancel,
-    onFavoriteEditCommit,
-}: Pick<
-    ExpandedCardProps,
-    | 'favoritePresets'
-    | 'builtinFavoritePresets'
-    | 'activeFavoriteId'
-    | 'onFavoriteApply'
-    | 'onBuiltinFavoriteApply'
-    | 'onFavoriteDelete'
-    | 'onFavoriteSave'
-    | 'brightness'
-    | 'hue'
-    | 'saturation'
-    | 'isOn'
-    | 'uiMode'
-    | 'selectedColorHue'
-> & {
-    isEditingFavorites: boolean;
-    pendingDeletedFavoriteIds: string[];
-    hasPendingFavoriteSave: boolean;
-    onFavoriteDeleteStage: (favoriteId: string) => void;
-    onFavoriteSaveStage: () => void;
-    onFavoriteEditCancel: () => void;
-    onFavoriteEditCommit: () => void;
-}) {
-    const visibleFavorites = isEditingFavorites
-        ? favoritePresets.filter((favorite) => !pendingDeletedFavoriteIds.includes(favorite.id))
-        : favoritePresets;
-    const previewSlotCount = hasPendingFavoriteSave ? 1 : 0;
-    const occupiedUserSlotCount = visibleFavorites.length + previewSlotCount;
-    const userSlots = Array.from({ length: 3 }, (_, index) => {
-        if (index < visibleFavorites.length) {
-            return visibleFavorites[index] ?? null;
-        }
-
-        if (hasPendingFavoriteSave && index === visibleFavorites.length) {
-            return 'pending-save';
-        }
-
-        return null;
-    });
-    const nextSavableIndex = hasPendingFavoriteSave ? -1 : occupiedUserSlotCount < userSlots.length ? occupiedUserSlotCount : -1;
-    const slots = [...userSlots, ...builtinFavoritePresets];
-    const liveFavoriteSettings: FavoriteSettings = {
-        brightness,
-        hue,
-        isOn,
-        kelvin: null,
-        mode: uiMode,
-        saturation,
-        selectedColorHue: selectedColorHue ?? null,
-    };
-    const liveFavoriteStyle = {
-        ['--dual-card-favorite-stroke' as string]: favoriteSettingsDisplayColor(liveFavoriteSettings),
-    } as CSSProperties;
-
-    return (
-        <div className="dual-card__favorites-section">
-            <div
-                className={`dual-card__favorites-grid${isEditingFavorites ? ' is-editing' : ''}`}
-                role="list"
-                aria-label="Saved favourite settings"
-            >
-                {slots.map((favorite, index) => {
-                    if (favorite === 'pending-save') {
-                        return (
-                            <div
-                                key={`favorite-pending-save-${index}`}
-                                role="listitem"
-                                className="dual-card__favorite-slot dual-card__favorite-slot--save dual-card__favorite-slot--preview"
-                                style={liveFavoriteStyle}
-                                aria-hidden="true"
-                            >
-                                <span className="dual-card__favorite-slot-value">
-                                    {favoriteSettingsPillValue(liveFavoriteSettings)}
-                                </span>
-                            </div>
-                        );
-                    }
-
-                    if (!favorite) {
-                        if (index !== nextSavableIndex) {
-                            return (
-                                <div
-                                    key={`favorite-slot-${index}`}
-                                    role="listitem"
-                                    className="dual-card__favorite-slot dual-card__favorite-slot--placeholder"
-                                    aria-hidden="true"
-                                />
-                            );
-                        }
-
-                        return (
-                            <button
-                                key={`favorite-slot-${index}`}
-                                type="button"
-                                className="dual-card__favorite-slot dual-card__favorite-slot--save dual-card__favorite-slot--preview"
-                                aria-label="Save current light state to favorites"
-                                style={liveFavoriteStyle}
-                                onClick={(event) => {
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                    if (isEditingFavorites) {
-                                        onFavoriteSaveStage();
-                                        return;
-                                    }
-                                    onFavoriteSave?.();
-                                }}
-                            >
-                                <span className="dual-card__favorite-slot-value">
-                                    {favoriteSettingsPillValue(liveFavoriteSettings)}
-                                </span>
-                            </button>
-                        );
-                    }
-
-                    if ('displayValue' in favorite) {
-                        const favoriteStyle = {
-                            ['--dual-card-favorite-stroke' as string]: favoriteSettingsDisplayColor(favorite.settings),
-                        } as CSSProperties;
-
-                        return (
-                            <button
-                                key={favorite.id}
-                                type="button"
-                                role="listitem"
-                                className={`dual-card__favorite-pill dual-card__favorite-pill--builtin ${
-                                    activeFavoriteId === favorite.id ? 'is-active' : ''
-                                }`}
-                                style={favoriteStyle}
-                                title={favorite.label}
-                                aria-label={favorite.label}
-                                onClick={() => {
-                                    if (isEditingFavorites) return;
-                                    onBuiltinFavoriteApply?.(favorite.id);
-                                }}
-                            >
-                                <span className="dual-card__favorite-pill-value">
-                                    {builtinFavoritePillValue(favorite)}
-                                </span>
-                            </button>
-                        );
-                    }
-
-                    const favoriteStyle = {
-                        ['--dual-card-favorite-stroke' as string]: favoriteDisplayColor(favorite),
-                    } as CSSProperties;
-
-                    return (
-                        <div
-                            key={favorite.id}
-                            role="listitem"
-                            className={`dual-card__favorite-pill-shell ${isEditingFavorites ? 'is-editing' : ''}`}
-                        >
-                            {isEditingFavorites ? (
-                                <button
-                                    type="button"
-                                    className="dual-card__favorite-delete"
-                                    aria-label={`Remove ${favorite.label}`}
-                                    onClick={(event) => {
-                                        event.preventDefault();
-                                        event.stopPropagation();
-                                        if (isEditingFavorites) {
-                                            onFavoriteDeleteStage(favorite.id);
-                                            return;
-                                        }
-                                        onFavoriteDelete?.(favorite.id);
-                                    }}
-                                >
-                                    <ha-icon icon="mdi:minus" />
-                                </button>
-                            ) : null}
-                            <button
-                                type="button"
-                                className={`dual-card__favorite-pill ${
-                                    activeFavoriteId === favorite.id ? 'is-active' : ''
-                                } ${isEditingFavorites ? 'is-editing' : ''}`}
-                                style={favoriteStyle}
-                                title={favorite.label}
-                                aria-label={favorite.label}
-                                onClick={() => {
-                                    if (isEditingFavorites) return;
-                                    onFavoriteApply?.(favorite.id);
-                                }}
-                            >
-                                <span className="dual-card__favorite-pill-value">{favoritePillValue(favorite)}</span>
-                            </button>
-                        </div>
-                    );
-                })}
-            </div>
-            {isEditingFavorites ? (
-                <div className="dual-card__favorite-actions-row">
-                    <button
-                        type="button"
-                        className="dual-card__favorite-action dual-card__favorite-action--cancel"
-                        aria-label="Cancel favourite edits"
-                        onClick={onFavoriteEditCancel}
-                    >
-                        <ha-icon icon="mdi:close" />
-                        <span>Cancel</span>
-                    </button>
-                    <button
-                        type="button"
-                        className="dual-card__favorite-action dual-card__favorite-action--commit"
-                        aria-label="Save favourite edits"
-                        onClick={onFavoriteEditCommit}
-                    >
-                        <ha-icon icon="mdi:check" />
-                        <span>Done</span>
-                    </button>
-                </div>
-            ) : null}
-        </div>
-    );
-}
-
 function GroupedLightsSection({
     groupedLights,
     controlScope,
@@ -546,6 +256,7 @@ function GroupedLightsSection({
     | 'getGroupedLightToggleStyle'
 >) {
     const [pulsedLightEntityId, setPulsedLightEntityId] = useState<string | null>(null);
+    const scopeGroupName = useId();
     const selectedGroupedLightName =
         controlScope !== 'group' && controlledLightEntityId
             ? groupedLights.find((light) => light.entityId === controlledLightEntityId)?.name ?? null
@@ -571,27 +282,41 @@ function GroupedLightsSection({
 
     return (
         <div className="dual-card__group-section">
-            <div className="dual-card__scope-row" role="group" aria-label="Control scope">
-                <button
-                    type="button"
+            <div className="dual-card__scope-row" role="radiogroup" aria-label="Control scope">
+                <label
                     className={`dual-card__scope-pill dual-card__scope-pill--group ${
                         controlScope === 'group' ? 'is-active' : ''
                     }`}
-                    aria-pressed={controlScope === 'group'}
-                    onClick={() => onControlScopeChange?.('group')}
                 >
-                    <span className="dual-card__scope-label">Group</span>
-                </button>
-                <button
-                    type="button"
+                    <input
+                        className="dual-card__scope-radio"
+                        type="radio"
+                        name={scopeGroupName}
+                        checked={controlScope === 'group'}
+                        onChange={() => onControlScopeChange?.('group')}
+                    />
+                    <span className="dual-card__scope-pill-content">
+                        <span className="dual-card__scope-radio-indicator" aria-hidden="true" />
+                        <span className="dual-card__scope-label">Group</span>
+                    </span>
+                </label>
+                <label
                     className={`dual-card__scope-pill dual-card__scope-pill--group-relative ${
                         controlScope === 'group-relative' ? 'is-active' : ''
                     }`}
-                    aria-pressed={controlScope === 'group-relative'}
-                    onClick={() => onControlScopeChange?.('group-relative')}
                 >
-                    <span className="dual-card__scope-label">Group Relative</span>
-                </button>
+                    <input
+                        className="dual-card__scope-radio"
+                        type="radio"
+                        name={scopeGroupName}
+                        checked={controlScope === 'group-relative'}
+                        onChange={() => onControlScopeChange?.('group-relative')}
+                    />
+                    <span className="dual-card__scope-pill-content">
+                        <span className="dual-card__scope-radio-indicator" aria-hidden="true" />
+                        <span className="dual-card__scope-label">Group Relative</span>
+                    </span>
+                </label>
             </div>
 
             <button
@@ -676,14 +401,6 @@ export function ExpandedCard({
     onFormationIndicatorSelect,
     onPadDoubleSelect,
     onToggle,
-    favoritePresets,
-    builtinFavoritePresets,
-    activeFavoriteId,
-    onFavoriteSave,
-    onFavoriteApply,
-    onBuiltinFavoriteApply,
-    onFavoriteDelete,
-    onFavoriteEditCommit,
     lightName,
     groupedLights,
     groupedLightMarkers,
@@ -698,40 +415,10 @@ export function ExpandedCard({
     onGroupedLightToggle,
     getGroupedLightToggleStyle,
 }: ExpandedCardProps) {
-    const [isEditingFavorites, setIsEditingFavorites] = useState(false);
-    const [pendingDeletedFavoriteIds, setPendingDeletedFavoriteIds] = useState<string[]>([]);
-    const [hasPendingFavoriteSave, setHasPendingFavoriteSave] = useState(false);
-    const isFavoriteEditingEnabled = isEditingFavorites;
     const padIsOn =
         isOn ||
         (controlScope === 'individual' &&
             groupedLightMarkers.some((marker) => marker.entityId !== controlledLightEntityId && marker.isOn));
-
-    useEffect(() => {
-        if (!isEditingFavorites) {
-            setPendingDeletedFavoriteIds([]);
-            setHasPendingFavoriteSave(false);
-        }
-    }, [favoritePresets, isEditingFavorites]);
-
-    const startFavoriteEditing = () => {
-        setPendingDeletedFavoriteIds([]);
-        setHasPendingFavoriteSave(false);
-        setIsEditingFavorites(true);
-    };
-
-    const cancelFavoriteEditing = () => {
-        setPendingDeletedFavoriteIds([]);
-        setHasPendingFavoriteSave(false);
-        setIsEditingFavorites(false);
-    };
-
-    const commitFavoriteEditing = () => {
-        onFavoriteEditCommit?.(pendingDeletedFavoriteIds, hasPendingFavoriteSave);
-        setPendingDeletedFavoriteIds([]);
-        setHasPendingFavoriteSave(false);
-        setIsEditingFavorites(false);
-    };
 
     return (
         <div className={`dual-card dual-card--expanded${isDarkMode ? ' dual-card--theme-dark' : ''}`}>
@@ -743,14 +430,6 @@ export function ExpandedCard({
                     <SettingsMenu
                         padVisualStyle={padVisualStyle}
                         onPadVisualStyleChange={onPadVisualStyleChange}
-                        isEditingFavorites={isFavoriteEditingEnabled}
-                        onToggleFavoriteEditing={() => {
-                            if (isFavoriteEditingEnabled) {
-                                cancelFavoriteEditing();
-                                return;
-                            }
-                            startFavoriteEditing();
-                        }}
                     />
                 </div>
             </div>
@@ -804,35 +483,6 @@ export function ExpandedCard({
                 lightName={lightName}
                 onModeChange={onModeChange}
                 onToggle={onToggle}
-            />
-
-            <FavoriteStrip
-                favoritePresets={favoritePresets}
-                builtinFavoritePresets={builtinFavoritePresets}
-                activeFavoriteId={activeFavoriteId}
-                brightness={brightness}
-                hue={hue}
-                saturation={saturation}
-                isOn={isOn}
-                uiMode={uiMode}
-                selectedColorHue={selectedColorHue}
-                onFavoriteApply={onFavoriteApply}
-                onBuiltinFavoriteApply={onBuiltinFavoriteApply}
-                onFavoriteDelete={onFavoriteDelete}
-                onFavoriteSave={onFavoriteSave}
-                isEditingFavorites={isFavoriteEditingEnabled}
-                pendingDeletedFavoriteIds={pendingDeletedFavoriteIds}
-                hasPendingFavoriteSave={hasPendingFavoriteSave}
-                onFavoriteDeleteStage={(favoriteId) => {
-                    setPendingDeletedFavoriteIds((current) =>
-                        current.includes(favoriteId) ? current : [...current, favoriteId]
-                    );
-                }}
-                onFavoriteSaveStage={() => setHasPendingFavoriteSave(true)}
-                onFavoriteEditCancel={cancelFavoriteEditing}
-                onFavoriteEditCommit={() => {
-                    commitFavoriteEditing();
-                }}
             />
 
             <GroupedLightsSection

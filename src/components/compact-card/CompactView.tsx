@@ -2,9 +2,6 @@ interface CompactViewProps {
     isDarkMode: boolean;
     lightName: string;
     isOn: boolean;
-    compactBackground: string;
-    iconBackground: string;
-    iconForeground: string;
     statusText: string;
     onPointerDown: () => void;
     onPointerUp: () => void;
@@ -21,9 +18,6 @@ export function CompactView({
     isDarkMode,
     lightName,
     isOn,
-    compactBackground,
-    iconBackground,
-    iconForeground,
     statusText,
     onPointerDown,
     onPointerUp,
@@ -46,23 +40,15 @@ export function CompactView({
             onPointerCancel={onPointerCancel}
             onClick={onClick}
             onKeyDown={onKeyDown}
-            style={{
-                background: compactBackground,
-                color: 'var(--primary-text-color, #111827)',
-            }}
         >
             <button
                 type="button"
-                className="dual-card__icon-shell dual-card__icon-button"
+                className={`dual-card__icon-shell dual-card__icon-button ${isOn ? 'is-on' : 'is-off'}`}
                 aria-label={`${isOn ? 'Turn off' : 'Turn on'} ${lightName}`}
                 aria-pressed={isOn}
                 onPointerDown={onIconPointerDown}
                 onPointerUp={(event) => event.stopPropagation()}
                 onClick={onIconClick}
-                style={{
-                    background: iconBackground,
-                    color: iconForeground,
-                }}
             >
                 <ha-icon icon="mdi:power" className="dual-card__icon" />
             </button>
