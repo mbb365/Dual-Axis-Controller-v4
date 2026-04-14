@@ -8,6 +8,7 @@ import {
     createSceneDefinition,
     deleteScene,
     getLightState,
+    isLightAvailable,
     isLightOn,
 } from './services/ha-connection';
 import { usePopupSheet } from './hooks/use-popup-sheet';
@@ -25,6 +26,7 @@ import {
     getMarkerControlValues,
     kelvinFromXPosition,
     type ControlScope,
+    type GroupRelativeMemberSnapshot,
     type GroupRelativeSnapshot,
     type QueuedControlCommand,
     xFractionFromHueSat,
@@ -79,6 +81,36 @@ function cloneGroupRelativeSnapshot(snapshot: GroupRelativeSnapshot): GroupRelat
 
 function hasLitGroupRelativeMembers(snapshot: GroupRelativeSnapshot | null | undefined) {
     return Boolean(snapshot?.members.some((member) => member.brightness > 0));
+}
+
+function hasMatchingGroupRelativeMembers(snapshot: GroupRelativeSnapshot | null | undefined, groupedLightIds: string[]) {
+    return Boolean(
+        snapshot &&
+            snapshot.members.length === groupedLightIds.length &&
+            snapshot.members.every((member) => groupedLightIds.includes(member.entityId))
+    );
+}
+
+function isControllableGroupRelativeMember(hass: any, member: GroupRelativeMemberSnapshot) {
+    const liveLight = getLightState(hass, member.entityId) ?? member.light;
+    return isLightAvailable(liveLight);
+}
+
+function buildGroupRelativeSnapshotFromMembers(
+    hass: any,
+    mode: 'temperature' | 'spectrum',
+    members: GroupRelativeMemberSnapshot[]
+): GroupRelativeSnapshot {
+    const averagedMembers = members.filter((member) => isControllableGroupRelativeMember(hass, member));
+    const sourceMembers = averagedMembers.length ? averagedMembers : members;
+
+    return {
+        mode,
+        averageX: sourceMembers.reduce((total, member) => total + member.x, 0) / sourceMembers.length,
+        averageBrightness:
+            sourceMembers.reduce((total, member) => total + member.brightness, 0) / sourceMembers.length,
+        members,
+    };
 }
 
 function favoritePresetsTargetMatch(left: FavoritePreset, right: FavoritePreset) {
@@ -354,6 +386,25 @@ export function CardApp({
         popupDragOffset,
     } = usePopupSheet(showPopup, setShowPopup);
 
+    useEffect(() => {
+        if (!controlledLightEntityId) {
+            return;
+        }
+
+        const selectedLight = getLightState(hass, controlledLightEntityId);
+        if (isLightAvailable(selectedLight)) {
+            return;
+        }
+
+        activeEntityIdRef.current = entityId;
+        controlledLightEntityIdRef.current = null;
+        setControlledLightEntityId(null);
+
+        if (controlScope === 'individual') {
+            setControlScope('group');
+        }
+    }, [controlScope, controlledLightEntityId, entityId, groupedLightStateSignature, hass]);
+
     const persistControllerSession = useCallback(() => {
         if (loadedControllerSessionEntityId !== entityId) return;
 
@@ -462,6 +513,14 @@ export function CardApp({
 
     const ensureGroupRelativeLayout = useCallback(() => {
         if (
+            effectiveControlScope === 'group-relative' &&
+            groupRelativeLayout.current?.mode === uiMode &&
+            hasMatchingGroupRelativeMembers(groupRelativeLayout.current, groupedLightIds)
+        ) {
+            return groupRelativeLayout.current;
+        }
+
+        if (
             groupRelativeLayout.current?.mode === uiMode &&
             groupRelativeLayoutStateSignature.current === groupedLightStateSignature
         ) {
@@ -469,7 +528,22 @@ export function CardApp({
         }
 
         return buildGroupRelativeLayout();
-    }, [buildGroupRelativeLayout, groupedLightStateSignature, uiMode]);
+    }, [buildGroupRelativeLayout, effectiveControlScope, groupedLightIds, groupedLightStateSignature, uiMode]);
+
+    const buildRelativeControlCommands = useCallback(
+        (members: GroupRelativeMemberSnapshot[], mode: 'temperature' | 'spectrum') =>
+            members
+                .filter((member) => isControllableGroupRelativeMember(hass, member))
+                .map((member) =>
+                    buildQueuedControlCommand(
+                        member.entityId,
+                        getLightState(hass, member.entityId) ?? member.light,
+                        controlValuesFromPosition(member.x, member.brightness, mode),
+                        mode
+                    )
+                ),
+        [hass]
+    );
 
     const buildAnchoredGroupRelativeLayout = useCallback(() => {
         const rememberedLayout = lastLitGroupRelativeLayout.current;
@@ -500,17 +574,26 @@ export function CardApp({
         const deltaX = anchorX - rememberedLayout.averageX;
         const deltaBrightness = aggregate.brightness - rememberedLayout.averageBrightness;
 
-        return {
-            mode: uiMode,
-            averageX: anchorX,
-            averageBrightness: aggregate.brightness,
-            members: rememberedLayout.members.map((member) => ({
-                ...member,
-                light: getLightState(hass, member.entityId) ?? member.light,
-                x: member.x + deltaX,
-                brightness: member.brightness + deltaBrightness,
-            })),
-        } satisfies GroupRelativeSnapshot;
+        return buildGroupRelativeSnapshotFromMembers(
+            hass,
+            uiMode,
+            rememberedLayout.members.map((member) => {
+                const liveLight = getLightState(hass, member.entityId) ?? member.light;
+                if (!isLightAvailable(liveLight)) {
+                    return {
+                        ...member,
+                        light: liveLight,
+                    };
+                }
+
+                return {
+                    ...member,
+                    light: liveLight,
+                    x: member.x + deltaX,
+                    brightness: member.brightness + deltaBrightness,
+                };
+            })
+        );
     }, [groupLight, groupedLightIds, hass, light, selectedColorHue, uiMode]);
 
     useEffect(() => {
@@ -1140,7 +1223,7 @@ export function CardApp({
                 const groupCommands = favorite.members
                     .map((member) => {
                         const targetLight = getLightState(activeHass, member.entityId);
-                        if (!targetLight) return null;
+                        if (!targetLight || !isLightAvailable(targetLight)) return null;
 
                         return buildQueuedControlCommand(
                             member.entityId,
@@ -1163,7 +1246,7 @@ export function CardApp({
             }
 
             const targetLight = getLightState(activeHass, favorite.entityId);
-            if (!targetLight) return;
+            if (!targetLight || !isLightAvailable(targetLight)) return;
 
             const nextCommand = buildQueuedControlCommand(
                 favorite.entityId,
@@ -1301,7 +1384,8 @@ export function CardApp({
                 const selectedRelativeLightEntityId = controlledLightEntityIdRef.current;
                 const nextRelativeLayoutMembers = selectedRelativeLightEntityId
                     ? snapshot.members.map((member) =>
-                          member.entityId === selectedRelativeLightEntityId
+                          member.entityId === selectedRelativeLightEntityId &&
+                          isControllableGroupRelativeMember(hass, member)
                               ? {
                                     ...member,
                                     x: nextX,
@@ -1314,35 +1398,25 @@ export function CardApp({
                           const deltaBrightness = nextBrightness - snapshot.averageBrightness;
                           return snapshot.members.map((member) => ({
                               ...member,
-                              x: member.x + deltaX,
-                              brightness: member.brightness + deltaBrightness,
+                              x: isControllableGroupRelativeMember(hass, member) ? member.x + deltaX : member.x,
+                              brightness: isControllableGroupRelativeMember(hass, member)
+                                  ? member.brightness + deltaBrightness
+                                  : member.brightness,
                           }));
                       })();
 
-                const nextRelativeLayout: GroupRelativeSnapshot = {
-                    mode: uiMode,
-                    averageX:
-                        nextRelativeLayoutMembers.reduce((total, member) => total + member.x, 0) /
-                        nextRelativeLayoutMembers.length,
-                    averageBrightness:
-                        nextRelativeLayoutMembers.reduce((total, member) => total + member.brightness, 0) /
-                        nextRelativeLayoutMembers.length,
-                    members: nextRelativeLayoutMembers,
-                };
+                const nextRelativeLayout = buildGroupRelativeSnapshotFromMembers(
+                    hass,
+                    uiMode,
+                    nextRelativeLayoutMembers
+                );
 
                 groupRelativeLayout.current = nextRelativeLayout;
                 if (hasLitGroupRelativeMembers(nextRelativeLayout)) {
                     rememberLastLitGroupRelativeLayout(nextRelativeLayout);
                 }
 
-                const relativeCommands = nextRelativeLayout.members.map((member) =>
-                    buildQueuedControlCommand(
-                        member.entityId,
-                        member.light,
-                        controlValuesFromPosition(member.x, member.brightness, uiMode),
-                        uiMode
-                    )
-                );
+                const relativeCommands = buildRelativeControlCommands(nextRelativeLayout.members, uiMode);
 
                 queueControlCommand(relativeCommands);
                 return;
@@ -1363,6 +1437,7 @@ export function CardApp({
         },
         [
             beginControlInteraction,
+            buildRelativeControlCommands,
             controlledLightEntityId,
             effectiveControlScope,
             ensureGroupRelativeLayout,
@@ -1476,17 +1551,12 @@ export function CardApp({
                         hasExplicitModeSelection.current = false;
                     }
 
-                    const restoreCommands = restoredLayout.members.map((member) =>
-                        buildQueuedControlCommand(
-                            member.entityId,
-                            getLightState(hass, member.entityId) ?? member.light,
-                            controlValuesFromPosition(member.x, member.brightness, restoredLayout.mode),
-                            restoredLayout.mode
-                        )
-                    );
+                    const restoreCommands = buildRelativeControlCommands(restoredLayout.members, restoredLayout.mode);
 
-                    queueControlCommand(restoreCommands);
-                    flushQueuedControlCommand(true);
+                    if (restoreCommands.length) {
+                        queueControlCommand(restoreCommands);
+                        flushQueuedControlCommand(true);
+                    }
                     void (async () => {
                         await waitForMs(320);
 
@@ -1570,7 +1640,7 @@ export function CardApp({
                     const memberRestoreCommands = groupedLightIds
                         .map((memberEntityId) => {
                             const memberLight = getLightState(activeHass, memberEntityId);
-                            if (!memberLight) return null;
+                            if (!memberLight || !isLightAvailable(memberLight)) return null;
 
                             return buildQueuedControlCommand(
                                 memberEntityId,
@@ -1618,7 +1688,17 @@ export function CardApp({
             })();
             return true;
         },
-        [entityId, flushQueuedControlCommand, groupLight, groupedLightIds, hass, light, lockUiModeSync, queueControlCommand]
+        [
+            buildRelativeControlCommands,
+            entityId,
+            flushQueuedControlCommand,
+            groupLight,
+            groupedLightIds,
+            hass,
+            light,
+            lockUiModeSync,
+            queueControlCommand,
+        ]
     );
 
     const handleToggle = useCallback(() => {
@@ -1859,29 +1939,26 @@ export function CardApp({
                 if (snapshot) {
                     const deltaX = targetX - snapshot.averageX;
                     const deltaBrightness = targetBrightness - snapshot.averageBrightness;
-                    const nextRelativeLayout: GroupRelativeSnapshot = {
-                        mode: targetSettings.mode,
-                        averageX: targetX,
-                        averageBrightness: targetBrightness,
-                        members: snapshot.members.map((member) => ({
+                    const nextRelativeLayout = buildGroupRelativeSnapshotFromMembers(
+                        hass,
+                        targetSettings.mode,
+                        snapshot.members.map((member) => ({
                             ...member,
-                            x: member.x + deltaX,
-                            brightness: member.brightness + deltaBrightness,
-                        })),
-                    };
+                            x: isControllableGroupRelativeMember(hass, member) ? member.x + deltaX : member.x,
+                            brightness: isControllableGroupRelativeMember(hass, member)
+                                ? member.brightness + deltaBrightness
+                                : member.brightness,
+                        }))
+                    );
 
                     groupRelativeLayout.current = nextRelativeLayout;
                     if (hasLitGroupRelativeMembers(nextRelativeLayout)) {
                         rememberLastLitGroupRelativeLayout(nextRelativeLayout);
                     }
 
-                    const relativeCommands = nextRelativeLayout.members.map((member) =>
-                        buildQueuedControlCommand(
-                            member.entityId,
-                            member.light,
-                            controlValuesFromPosition(member.x, member.brightness, targetSettings.mode),
-                            targetSettings.mode
-                        )
+                    const relativeCommands = buildRelativeControlCommands(
+                        nextRelativeLayout.members,
+                        targetSettings.mode
                     );
 
                     queueControlCommand(relativeCommands);
@@ -1921,6 +1998,7 @@ export function CardApp({
             flushQueuedControlCommand(true);
         },
         [
+            buildRelativeControlCommands,
             builtinFavoritePresets,
             clearInteractionLock,
             controlledLightEntityId,
@@ -2242,6 +2320,11 @@ export function CardApp({
     );
 
     const handleGroupedLightSelect = useCallback((nextEntityId: string) => {
+        const targetLight = getLightState(hass, nextEntityId);
+        if (!isLightAvailable(targetLight)) {
+            return;
+        }
+
         activeEntityIdRef.current = nextEntityId;
         stopDiscoMode();
 
@@ -2255,7 +2338,7 @@ export function CardApp({
         setControlScope('individual');
         controlledLightEntityIdRef.current = nextEntityId;
         setControlledLightEntityId(nextEntityId);
-    }, [controlScope, stopDiscoMode]);
+    }, [controlScope, hass, stopDiscoMode]);
 
     const handleGroupRelativeFormationSelect = useCallback(() => {
         stopDiscoMode();
@@ -2268,7 +2351,7 @@ export function CardApp({
     const handleGroupedLightToggle = useCallback(
         (nextEntityId: string) => {
             const targetLight = getLightState(hass, nextEntityId);
-            if (!targetLight) return;
+            if (!targetLight || !isLightAvailable(targetLight)) return;
 
             stopDiscoMode();
             groupRelativeLayout.current = null;
@@ -2314,14 +2397,7 @@ export function CardApp({
                 setKelvin(uiMode === 'temperature' ? kelvinFromXPosition(relativeLayout.averageX, groupLight ?? light) : null);
 
                 const relativeCommands = anchoredRelativeLayout
-                    ? relativeLayout.members.map((member) =>
-                          buildQueuedControlCommand(
-                              member.entityId,
-                              getLightState(hass, member.entityId) ?? member.light,
-                              controlValuesFromPosition(member.x, member.brightness, uiMode),
-                              uiMode
-                          )
-                      )
+                    ? buildRelativeControlCommands(relativeLayout.members, uiMode)
                     : [];
 
                 if (relativeCommands.length) {
@@ -2354,7 +2430,7 @@ export function CardApp({
         const groupCommands = groupedLightIds
             .map((memberEntityId) => {
                 const memberLight = getLightState(hass, memberEntityId) ?? groupLight ?? light;
-                if (!memberLight) return null;
+                if (!memberLight || !isLightAvailable(memberLight)) return null;
 
                 return buildQueuedControlCommand(
                     memberEntityId,
@@ -2378,6 +2454,7 @@ export function CardApp({
     }, [
         brightness,
         buildAnchoredGroupRelativeLayout,
+        buildRelativeControlCommands,
         clearInteractionLock,
         effectiveControlScope,
         ensureGroupRelativeLayout,

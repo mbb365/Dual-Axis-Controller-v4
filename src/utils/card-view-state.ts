@@ -1,6 +1,6 @@
 import type { GroupedLightOption } from '../components/CompactCard';
 import type { HaloMarker } from '../components/Halo';
-import { getLightState, isLightOn } from '../services/ha-connection';
+import { getLightState, isLightAvailable, isLightOn } from '../services/ha-connection';
 import {
     controlValuesFromPosition,
     formatGroupedLightValue,
@@ -51,6 +51,7 @@ export function buildGroupedAggregateControlState(
 
             const values = getMarkerControlValues(memberState, uiMode);
             return {
+                isAvailable: isLightAvailable(memberState),
                 isOn: isLightOn(memberState),
                 brightness: values.brightness,
                 x:
@@ -63,6 +64,7 @@ export function buildGroupedAggregateControlState(
             (
                 member
             ): member is {
+                isAvailable: boolean;
                 isOn: boolean;
                 brightness: number;
                 x: number;
@@ -73,8 +75,11 @@ export function buildGroupedAggregateControlState(
         return buildGroupedAggregateControlState(hass, [], uiMode, fallbackLight, lockedSpectrumHue);
     }
 
-    const averageX = members.reduce((total, member) => total + member.x, 0) / members.length;
-    const averageBrightness = members.reduce((total, member) => total + member.brightness, 0) / members.length;
+    const averagedMembers = members.filter((member) => member.isAvailable);
+    const sourceMembers = averagedMembers.length ? averagedMembers : members;
+    const averageX = sourceMembers.reduce((total, member) => total + member.x, 0) / sourceMembers.length;
+    const averageBrightness =
+        sourceMembers.reduce((total, member) => total + member.brightness, 0) / sourceMembers.length;
     const averagedValues =
         uiMode === 'spectrum' && lockedSpectrumHue != null
             ? {
@@ -85,7 +90,7 @@ export function buildGroupedAggregateControlState(
             : controlValuesFromPosition(averageX, averageBrightness, uiMode);
 
     return {
-        isOn: members.some((member) => member.isOn),
+        isOn: sourceMembers.some((member) => member.isOn),
         brightness: averageBrightness,
         hue: averagedValues.hue,
         saturation: averagedValues.saturation,
@@ -106,16 +111,18 @@ export function buildGroupedLights(hass: HassLike, groupedLightIds: string[]): G
                     ? 'temperature'
                     : 'spectrum';
             const previewValues = getMarkerControlValues(memberState, previewMode);
+            const isMuted = !isLightAvailable(memberState);
 
             return {
                 entityId: memberId,
                 isOn: isLightOn(memberState),
+                isMuted,
                 name: memberState.attributes.friendly_name || memberId,
                 previewBrightness: previewValues.brightness,
                 previewHue: previewValues.hue,
                 previewMode,
                 previewSaturation: previewValues.saturation,
-                value: formatGroupedLightValue(memberState),
+                value: isMuted ? 'Muted' : formatGroupedLightValue(memberState),
             };
         })
         .filter((member): member is GroupedLightOption => member != null);
@@ -132,9 +139,13 @@ export function buildGroupedLightMarkers(
 ): HaloMarker[] {
     if (relativeLayout?.mode === uiMode) {
         return relativeLayout.members.map((member) => ({
+            isMuted: !isLightAvailable(getLightState(hass, member.entityId) ?? member.light),
             entityId: member.entityId,
-            isOn: member.brightness > 0,
-            isActive: controlScope === 'group-relative' && controlledLightEntityId === member.entityId,
+            isOn: isLightAvailable(getLightState(hass, member.entityId) ?? member.light) && member.brightness > 0,
+            isActive:
+                controlScope === 'group-relative' &&
+                controlledLightEntityId === member.entityId &&
+                isLightAvailable(getLightState(hass, member.entityId) ?? member.light),
             ...(uiMode === 'spectrum' && lockedSpectrumHue != null
                 ? {
                       brightness: member.brightness,
@@ -154,7 +165,9 @@ export function buildGroupedLightMarkers(
         markers.push({
             entityId: memberId,
             isOn: isLightOn(memberState),
-            isActive: controlScope === 'individual' && controlledLightEntityId === memberId,
+            isActive:
+                controlScope === 'individual' && controlledLightEntityId === memberId && isLightAvailable(memberState),
+            isMuted: !isLightAvailable(memberState),
             ...(uiMode === 'spectrum' && lockedSpectrumHue != null
                 ? {
                       brightness: controlValues.brightness,
@@ -205,10 +218,14 @@ export function buildGroupRelativeSnapshot(
         return null;
     }
 
+    const averagedMembers = members.filter((member) => isLightAvailable(member.light));
+    const sourceMembers = averagedMembers.length ? averagedMembers : members;
+
     return {
         mode: uiMode,
-        averageX: members.reduce((total, member) => total + member.x, 0) / members.length,
-        averageBrightness: members.reduce((total, member) => total + member.brightness, 0) / members.length,
+        averageX: sourceMembers.reduce((total, member) => total + member.x, 0) / sourceMembers.length,
+        averageBrightness:
+            sourceMembers.reduce((total, member) => total + member.brightness, 0) / sourceMembers.length,
         members,
     };
 }

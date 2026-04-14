@@ -438,6 +438,15 @@ export const HALO_CSS = `
         0 6px 12px rgba(15, 23, 42, 0.08);
 }
 
+.halo__group-indicator.is-muted {
+    cursor: default;
+    opacity: 0.38;
+    filter: grayscale(1);
+    box-shadow:
+        0 0 0 1px rgba(15, 23, 42, 0.04),
+        0 4px 8px rgba(15, 23, 42, 0.06);
+}
+
 .halo__disco-overlay {
     position: absolute;
     inset: 0;
@@ -651,6 +660,12 @@ export const HALO_CSS = `
         box-shadow:
             0 0 0 1px rgba(255, 255, 255, 0.04),
             0 6px 12px rgba(0, 0, 0, 0.16);
+    }
+
+    .halo__group-indicator.is-muted {
+        box-shadow:
+            0 0 0 1px rgba(255, 255, 255, 0.03),
+            0 4px 8px rgba(0, 0, 0, 0.1);
     }
 
     .halo__pulse::before {

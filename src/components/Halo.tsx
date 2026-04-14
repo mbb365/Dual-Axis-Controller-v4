@@ -57,6 +57,7 @@ export interface HaloMarker {
     saturation: number;
     brightness: number;
     isOn: boolean;
+    isMuted?: boolean;
     isActive?: boolean;
 }
 
@@ -418,6 +419,10 @@ export function Halo({
     const handleMarkerPointerDown = (marker: HaloMarker, event: React.PointerEvent<HTMLButtonElement>) => {
         event.preventDefault();
         event.stopPropagation();
+
+        if (marker.isMuted) {
+            return;
+        }
 
         if (isDiscoMode) {
             resetSpeedRuleTracking();
@@ -824,8 +829,10 @@ export function Halo({
                               className={classNames('halo__group-indicator', {
                                   'is-active': marker.isActive,
                                   'is-off': !marker.isOn,
+                                  'is-muted': marker.isMuted,
                               })}
-                              aria-label={`Control ${marker.entityId}`}
+                              aria-label={marker.isMuted ? `${marker.entityId} is muted` : `Control ${marker.entityId}`}
+                              disabled={marker.isMuted}
                               onPointerDown={(event) => handleMarkerPointerDown(marker, event)}
                                   style={{
                                   left: `${xPosFromHueSat(marker.hue, marker.saturation, mode, lockedSpectrumHue, visualStyle)}%`,

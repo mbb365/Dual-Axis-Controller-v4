@@ -1033,6 +1033,24 @@
     animation: dual-card-group-item-handoff 280ms ease-out;
 }
 
+.dual-card__group-item.is-muted {
+    opacity: 0.56;
+    cursor: default;
+}
+
+.dual-card__group-item.is-muted.is-active {
+    background: var(--dual-card-control-idle);
+}
+
+.dual-card__group-item.is-muted:hover {
+    background: var(--dual-card-control-idle);
+}
+
+.dual-card__group-item.is-muted .dual-card__group-name,
+.dual-card__group-item.is-muted .dual-card__group-value {
+    color: var(--dual-card-text-muted);
+}
+
 .dual-card__group-toggle {
     appearance: none;
     -webkit-appearance: none;
@@ -1047,6 +1065,11 @@
     cursor: pointer;
     position: relative;
     transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.dual-card__group-toggle:disabled,
+.dual-card__group-main:disabled {
+    cursor: default;
 }
 
 .dual-card__group-toggle[aria-pressed='true'] {}
@@ -1618,6 +1641,10 @@
     .dual-card--theme-dark .dual-card__group-item:hover,
     .dual-card--theme-dark .dual-card__scope-pill:not(.is-active):hover {
         background: #2c2c2c;
+    }
+
+    .dual-card--theme-dark .dual-card__group-item.is-muted:hover {
+        background: rgba(255, 255, 255, 0.035);
     }
 
     .dual-card--theme-dark .dual-card__settings-option:hover,

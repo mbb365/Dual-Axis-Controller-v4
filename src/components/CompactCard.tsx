@@ -16,6 +16,7 @@ export type CardLayout = 'compact' | 'expanded';
 export interface GroupedLightOption {
     entityId: string;
     isOn: boolean;
+    isMuted: boolean;
     name: string;
     value: string;
     previewBrightness: number;

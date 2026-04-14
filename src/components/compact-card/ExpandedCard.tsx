@@ -341,13 +341,16 @@ function GroupedLightsSection({
                             controlScope !== 'group' && controlledLightEntityId === groupedLight.entityId
                                 ? 'is-active'
                                 : ''
-                        } ${pulsedLightEntityId === groupedLight.entityId ? 'is-handoff' : ''}`}
+                        } ${pulsedLightEntityId === groupedLight.entityId ? 'is-handoff' : ''} ${
+                            groupedLight.isMuted ? 'is-muted' : ''
+                        }`}
                     >
                         <button
                             type="button"
                             className="dual-card__group-toggle"
                             aria-label={`${groupedLight.isOn ? 'Turn off' : 'Turn on'} ${groupedLight.name}`}
                             aria-pressed={groupedLight.isOn}
+                            disabled={groupedLight.isMuted}
                             onClick={() => onGroupedLightToggle?.(groupedLight.entityId)}
                             style={getGroupedLightToggleStyle(groupedLight)}
                         >
@@ -356,7 +359,11 @@ function GroupedLightsSection({
                         <button
                             type="button"
                             className="dual-card__group-main"
+                            disabled={groupedLight.isMuted}
                             onClick={() => {
+                                if (groupedLight.isMuted) {
+                                    return;
+                                }
                                 onGroupedLightSelect?.(groupedLight.entityId);
                                 onGroupListClose();
                             }}
