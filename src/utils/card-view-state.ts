@@ -138,22 +138,27 @@ export function buildGroupedLightMarkers(
     lockedSpectrumHue?: number | null
 ): HaloMarker[] {
     if (relativeLayout?.mode === uiMode) {
-        return relativeLayout.members.map((member) => ({
-            isMuted: !isLightAvailable(getLightState(hass, member.entityId) ?? member.light),
-            entityId: member.entityId,
-            isOn: isLightAvailable(getLightState(hass, member.entityId) ?? member.light) && member.brightness > 0,
-            isActive:
-                controlScope === 'group-relative' &&
-                controlledLightEntityId === member.entityId &&
-                isLightAvailable(getLightState(hass, member.entityId) ?? member.light),
-            ...(uiMode === 'spectrum' && lockedSpectrumHue != null
-                ? {
-                      brightness: member.brightness,
-                      hue: lockedSpectrumHue,
-                      saturation: Math.round(member.x * 100),
-                  }
-                : controlValuesFromPosition(member.x, member.brightness, uiMode)),
-        }));
+        return relativeLayout.members.map((member) => {
+            const liveLight = getLightState(hass, member.entityId) ?? member.light;
+            const isAvailable = isLightAvailable(liveLight);
+
+            return {
+                isMuted: !isAvailable,
+                entityId: member.entityId,
+                isOn: isAvailable && member.brightness > 0,
+                isActive:
+                    controlScope === 'group-relative' &&
+                    controlledLightEntityId === member.entityId &&
+                    isAvailable,
+                ...(uiMode === 'spectrum' && lockedSpectrumHue != null
+                    ? {
+                          brightness: member.brightness,
+                          hue: lockedSpectrumHue,
+                          saturation: Math.round(member.x * 100),
+                      }
+                    : controlValuesFromPosition(member.x, member.brightness, uiMode)),
+            };
+        });
     }
 
     return groupedLightIds.reduce<HaloMarker[]>((markers, memberId) => {

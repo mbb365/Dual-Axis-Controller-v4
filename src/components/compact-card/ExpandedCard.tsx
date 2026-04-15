@@ -23,6 +23,8 @@ interface ExpandedCardProps {
     onControlInteractionStart?: () => void;
     onControlInteractionEnd?: () => void;
     isDiscoMode?: boolean;
+    discoSpeedMs?: 900 | 1200 | 1500;
+    onDiscoSpeedChange?: (speedMs: 900 | 1200 | 1500) => void;
     onDiscoModeTrigger?: () => void;
     onDiscoModeExit?: () => void;
     onPadMarkerSelect?: (entityId: string) => void;
@@ -402,6 +404,8 @@ export function ExpandedCard({
     onControlInteractionStart,
     onControlInteractionEnd,
     isDiscoMode,
+    discoSpeedMs,
+    onDiscoSpeedChange,
     onDiscoModeTrigger,
     onDiscoModeExit,
     onPadMarkerSelect,
@@ -467,6 +471,8 @@ export function ExpandedCard({
                     onInteractionStart={onControlInteractionStart}
                     onInteractionEnd={onControlInteractionEnd}
                     isDiscoMode={isDiscoMode}
+                    discoSpeedMs={discoSpeedMs}
+                    onDiscoSpeedChange={onDiscoSpeedChange}
                     onDiscoModeTrigger={onDiscoModeTrigger}
                     onDiscoModeExit={onDiscoModeExit}
                     onMarkerSelect={onPadMarkerSelect}

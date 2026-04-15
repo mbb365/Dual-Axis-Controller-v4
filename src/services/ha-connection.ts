@@ -171,6 +171,13 @@ export async function callLightService(
                         brightness: undefined,
                     })
                 );
+                await hass.callService(
+                    'light',
+                    'turn_on',
+                    buildServiceData({
+                        hs_color: undefined,
+                    })
+                );
                 return;
             }
         } catch {

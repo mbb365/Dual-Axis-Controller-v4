@@ -494,6 +494,7 @@ export const HALO_CSS = `
     box-shadow: none;
     color: rgba(15, 23, 42, 0.92);
     text-align: center;
+    pointer-events: auto;
 }
 
 .halo__disco-overlay--matrix .halo__disco-message {
@@ -514,6 +515,45 @@ export const HALO_CSS = `
     line-height: 1.55;
     font-weight: 700;
     color: rgba(15, 23, 42, 0.88);
+}
+
+.halo__disco-speed-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 18px;
+}
+
+.halo__disco-speed-button {
+    appearance: none;
+    -webkit-appearance: none;
+    min-height: 36px;
+    padding: 0 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(15, 23, 42, 0.14);
+    background: rgba(255, 255, 255, 0.72);
+    color: rgba(15, 23, 42, 0.9);
+    font: inherit;
+    font-size: 0.88rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+.halo__disco-speed-button:hover {
+    background: rgba(255, 255, 255, 0.88);
+}
+
+.halo__disco-speed-button.is-active {
+    background: rgba(15, 23, 42, 0.92);
+    border-color: rgba(15, 23, 42, 0.92);
+    color: rgba(255, 255, 255, 0.98);
+}
+
+.halo__disco-speed-button:focus-visible {
+    outline: 2px solid rgba(59, 130, 246, 0.9);
+    outline-offset: 2px;
 }
 
 @keyframes halo-disco-spin {
@@ -604,6 +644,17 @@ export const HALO_CSS = `
     .halo__disco-copy {
         font-size: 0.92rem;
     }
+
+    .halo__disco-speed-row {
+        margin-top: 16px;
+        gap: 6px;
+    }
+
+    .halo__disco-speed-button {
+        min-height: 34px;
+        padding: 0 12px;
+        font-size: 0.82rem;
+    }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -617,6 +668,22 @@ export const HALO_CSS = `
 
     .halo__disco-copy {
         color: rgba(248, 250, 252, 0.96);
+    }
+
+    .halo__disco-speed-button {
+        border-color: rgba(255, 255, 255, 0.18);
+        background: rgba(15, 23, 42, 0.38);
+        color: rgba(248, 250, 252, 0.96);
+    }
+
+    .halo__disco-speed-button:hover {
+        background: rgba(15, 23, 42, 0.5);
+    }
+
+    .halo__disco-speed-button.is-active {
+        background: rgba(248, 250, 252, 0.94);
+        border-color: rgba(248, 250, 252, 0.94);
+        color: rgba(15, 23, 42, 0.92);
     }
 
     .halo__pad {

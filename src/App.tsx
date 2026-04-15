@@ -278,7 +278,16 @@ export function CardApp({
     const initialControllerSessionRef = useRef<StoredControllerSession | null>(loadControllerSession(entityId));
     const initialControllerSession = initialControllerSessionRef.current;
     const groupLight = getLightState(hass, entityId);
-    const groupedLightIds = getGroupedLightIds(groupLight);
+    const groupedEntityIdAttributeKey = Array.isArray(groupLight?.attributes.entity_id)
+        ? groupLight.attributes.entity_id.join('|')
+        : `${groupLight?.attributes.entity_id ?? ''}`;
+    const groupedLightsAttributeKey = Array.isArray(groupLight?.attributes.lights)
+        ? groupLight.attributes.lights.join('|')
+        : `${groupLight?.attributes.lights ?? ''}`;
+    const groupedLightIds = useMemo(
+        () => getGroupedLightIds(groupLight),
+        [groupLight?.entity_id, groupedEntityIdAttributeKey, groupedLightsAttributeKey]
+    );
     const [controlScope, setControlScope] = useState<ControlScope>(initialControllerSession?.controlScope ?? 'group');
     const [controlledLightEntityId, setControlledLightEntityId] = useState<string | null>(
         initialControllerSession?.controlledLightEntityId ?? null
@@ -355,21 +364,33 @@ export function CardApp({
     );
     const [showPopup, setShowPopup] = useState(false);
     const [isDiscoMode, setIsDiscoMode] = useState(false);
+    const [discoSpeedMs, setDiscoSpeedMs] = useState<900 | 1200 | 1500>(DISCO_SEND_INTERVAL_MS);
     const [favoritePresets, setFavoritePresets] = useState(() => loadFavoritePresets(entityId));
     const [loadedControllerSessionEntityId, setLoadedControllerSessionEntityId] = useState(entityId);
 
-    const groupedLights: GroupedLightOption[] = buildGroupedLights(hass, groupedLightIds);
-    const groupLightStateSignature = buildLightStateSignature(groupLight);
-    const activeLightStateSignature = buildLightStateSignature(light);
-    const groupedLightStateSignature = groupedLightIds
-        .map((memberId) => `${memberId}:${buildLightStateSignature(getLightState(hass, memberId))}`)
-        .join('|');
-    const isDarkMode = Boolean(hass?.themes?.darkMode);
     const groupedLightIdsKey = groupedLightIds.join('|');
-    const sharedFavoriteSceneSignature = Object.keys(hass?.states ?? {})
-        .filter((stateEntityId) => isSharedFavoriteSceneEntityId(stateEntityId, entityId))
-        .sort()
-        .join('|');
+    const groupedLights: GroupedLightOption[] = useMemo(
+        () => buildGroupedLights(hass, groupedLightIds),
+        [groupedLightIds, groupedLightIdsKey, hass]
+    );
+    const groupLightStateSignature = useMemo(() => buildLightStateSignature(groupLight), [groupLight]);
+    const activeLightStateSignature = useMemo(() => buildLightStateSignature(light), [light]);
+    const groupedLightStateSignature = useMemo(
+        () =>
+            groupedLightIds
+                .map((memberId) => `${memberId}:${buildLightStateSignature(getLightState(hass, memberId))}`)
+                .join('|'),
+        [groupedLightIds, groupedLightIdsKey, hass]
+    );
+    const isDarkMode = Boolean(hass?.themes?.darkMode);
+    const sharedFavoriteSceneSignature = useMemo(
+        () =>
+            Object.keys(hass?.states ?? {})
+                .filter((stateEntityId) => isSharedFavoriteSceneEntityId(stateEntityId, entityId))
+                .sort()
+                .join('|'),
+        [entityId, hass?.states]
+    );
     const effectiveControlScope: ControlScope = controlScope;
     const currentControlRestoreKey =
         effectiveControlScope === 'individual' && controlledLightEntityId ? controlledLightEntityId : entityId;
@@ -447,16 +468,20 @@ export function CardApp({
         [persistControllerSession]
     );
 
-    const groupedLightMarkers: HaloMarker[] = buildGroupedLightMarkers(
-        hass,
-        groupedLightIds,
-        uiMode,
-        effectiveControlScope,
-        controlledLightEntityId,
-        effectiveControlScope === 'group-relative' && groupRelativeLayout.current?.mode === uiMode
-            ? groupRelativeLayout.current
-            : null,
-        uiMode === 'spectrum' ? selectedColorHue : null
+    const groupedLightMarkers: HaloMarker[] = useMemo(
+        () =>
+            buildGroupedLightMarkers(
+                hass,
+                groupedLightIds,
+                uiMode,
+                effectiveControlScope,
+                controlledLightEntityId,
+                effectiveControlScope === 'group-relative' && groupRelativeLayout.current?.mode === uiMode
+                    ? groupRelativeLayout.current
+                    : null,
+                uiMode === 'spectrum' ? selectedColorHue : null
+            ),
+        [controlledLightEntityId, effectiveControlScope, groupedLightIds, groupedLightIdsKey, hass, selectedColorHue, uiMode]
     );
     const groupRelativeFormationIndicator =
         effectiveControlScope === 'group-relative' && controlledLightEntityId && groupedLightIds.length
@@ -1088,7 +1113,7 @@ export function CardApp({
         if (discoStepRef.current === 0) {
             applyDiscoFrame();
         }
-        discoSendInterval.current = window.setInterval(applyDiscoFrame, DISCO_SEND_INTERVAL_MS);
+        discoSendInterval.current = window.setInterval(applyDiscoFrame, discoSpeedMs);
 
         return () => {
             if (discoSendInterval.current) {
@@ -1097,7 +1122,7 @@ export function CardApp({
             }
             discoBatchInFlight.current = false;
         };
-    }, [activeEntityId, groupedLightIdsKey, isDiscoMode]);
+    }, [activeEntityId, discoSpeedMs, groupedLightIdsKey, isDiscoMode]);
 
     const hasMeaningfulControlDelta = useCallback(
         (left: QueuedControlCommand | null, right: QueuedControlCommand) => {
@@ -1742,9 +1767,19 @@ export function CardApp({
             return;
         }
 
-        // Always call the service (don't return early without calling it)
-        callLightService(hass, targetEntityId, nextState);
-        setIsOn(nextState);
+        void (async () => {
+            try {
+                await callLightService(hass, targetEntityId, nextState);
+                setIsOn(nextState);
+            } catch (error) {
+                console.error('[Dual Halo Controller] Failed to toggle light', {
+                    entityId: targetEntityId,
+                    nextState,
+                    error,
+                });
+                setIsOn(actualIsOn);
+            }
+        })();
     }, [
         brightness,
         controlledLightEntityId,
@@ -1804,7 +1839,6 @@ export function CardApp({
                 }
             }
         }
-        setIsOn(nextState);
         markInteraction(1000);
         groupRelativeLayout.current = null;
         groupRelativeInteractionSnapshot.current = null;
@@ -1818,8 +1852,19 @@ export function CardApp({
         if (shouldTryRestore && restoreRememberedControllerState(compactRestoreScope, compactRestoreEntityId)) {
             // State was restored, don't override it
         } else {
-            // Always ensure service is called
-            callLightService(hass, toggleTargetEntityId, nextState);
+            void (async () => {
+                try {
+                    await callLightService(hass, toggleTargetEntityId, nextState);
+                    setIsOn(nextState);
+                } catch (error) {
+                    console.error('[Dual Halo Controller] Failed to toggle compact light control', {
+                        entityId: toggleTargetEntityId,
+                        nextState,
+                        error,
+                    });
+                    setIsOn(actualIsOn);
+                }
+            })();
         }
     }, [
         controlScope,
@@ -1880,7 +1925,10 @@ export function CardApp({
         saturation,
         selectedColorHue,
     }), [brightness, hue, isOn, kelvin, uiMode, saturation, selectedColorHue]);
-    const builtinFavoritePresets = buildBuiltinFavoritePresets(new Date(), hass?.states?.['sun.sun']);
+    const builtinFavoritePresets = useMemo(
+        () => buildBuiltinFavoritePresets(new Date(), hass?.states?.['sun.sun']),
+        [hass?.states]
+    );
 
     const activeFavoriteId =
         favoritePresets.find((favorite) => {
@@ -2540,6 +2588,8 @@ export function CardApp({
         onControlInteractionStart: beginControlInteraction,
         onControlInteractionEnd: handleControlInteractionEnd,
         isDiscoMode,
+        discoSpeedMs,
+        onDiscoSpeedChange: setDiscoSpeedMs,
         onDiscoModeTrigger: startDiscoMode,
         onDiscoModeExit: stopDiscoMode,
         favoritePresets,
@@ -2588,6 +2638,8 @@ export function CardApp({
                 onControlInteractionStart={beginControlInteraction}
                 onControlInteractionEnd={handleControlInteractionEnd}
                 isDiscoMode={isDiscoMode}
+                discoSpeedMs={discoSpeedMs}
+                onDiscoSpeedChange={setDiscoSpeedMs}
                 onDiscoModeTrigger={startDiscoMode}
                 onDiscoModeExit={stopDiscoMode}
                 onPadMarkerSelect={groupedLights.length ? handleGroupedLightSelect : undefined}
