@@ -340,7 +340,6 @@ export function CardApp({
     const favoriteMigrationInFlightKey = useRef<string | null>(null);
     const uiModeSyncLock = useRef<{ mode: 'temperature' | 'spectrum'; expiresAt: number } | null>(null);
     const groupRelativeLayout = useRef<GroupRelativeSnapshot | null>(null);
-    const groupRelativeLayoutStateSignature = useRef<string | null>(null);
     const groupRelativeInteractionSnapshot = useRef<GroupRelativeSnapshot | null>(null);
     const lastLitGroupRelativeLayout = useRef<GroupRelativeSnapshot | null>(
         hydrateStoredGroupRelativeLayout(initialControllerSession?.lastLitGroupRelativeLayout ?? null, hass, groupedLightIds)
@@ -524,36 +523,26 @@ export function CardApp({
 
         if (!snapshot) {
             groupRelativeLayout.current = null;
-            groupRelativeLayoutStateSignature.current = null;
             return null;
         }
 
         groupRelativeLayout.current = snapshot;
-        groupRelativeLayoutStateSignature.current = groupedLightStateSignature;
         if (hasLitGroupRelativeMembers(snapshot)) {
             rememberLastLitGroupRelativeLayout(snapshot);
         }
         return snapshot;
-    }, [groupedLightIds, groupedLightStateSignature, hass, rememberLastLitGroupRelativeLayout, selectedColorHue, uiMode]);
+    }, [groupedLightIds, hass, rememberLastLitGroupRelativeLayout, selectedColorHue, uiMode]);
 
     const ensureGroupRelativeLayout = useCallback(() => {
         if (
-            effectiveControlScope === 'group-relative' &&
             groupRelativeLayout.current?.mode === uiMode &&
             hasMatchingGroupRelativeMembers(groupRelativeLayout.current, groupedLightIds)
         ) {
             return groupRelativeLayout.current;
         }
 
-        if (
-            groupRelativeLayout.current?.mode === uiMode &&
-            groupRelativeLayoutStateSignature.current === groupedLightStateSignature
-        ) {
-            return groupRelativeLayout.current;
-        }
-
         return buildGroupRelativeLayout();
-    }, [buildGroupRelativeLayout, effectiveControlScope, groupedLightIds, groupedLightStateSignature, uiMode]);
+    }, [buildGroupRelativeLayout, groupedLightIds, uiMode]);
 
     const buildRelativeControlCommands = useCallback(
         (members: GroupRelativeMemberSnapshot[], mode: 'temperature' | 'spectrum') =>
@@ -774,7 +763,6 @@ export function CardApp({
 
     useEffect(() => {
         groupRelativeLayout.current = null;
-        groupRelativeLayoutStateSignature.current = null;
         groupRelativeInteractionSnapshot.current = null;
     }, [entityId, groupedLightIds.join('|'), uiMode]);
 
@@ -2004,10 +1992,7 @@ export function CardApp({
                         rememberLastLitGroupRelativeLayout(nextRelativeLayout);
                     }
 
-                    const relativeCommands = buildRelativeControlCommands(
-                        nextRelativeLayout.members,
-                        targetSettings.mode
-                    );
+                    const relativeCommands = buildRelativeControlCommands(nextRelativeLayout.members, targetSettings.mode);
 
                     queueControlCommand(relativeCommands);
                     flushQueuedControlCommand(true);
@@ -2422,7 +2407,6 @@ export function CardApp({
             const relativeLayout = anchoredRelativeLayout ?? ensureGroupRelativeLayout();
             if (relativeLayout) {
                 groupRelativeLayout.current = relativeLayout;
-                groupRelativeLayoutStateSignature.current = groupedLightStateSignature;
                 groupRelativeInteractionSnapshot.current = null;
                 if (hasLitGroupRelativeMembers(relativeLayout)) {
                     rememberLastLitGroupRelativeLayout(relativeLayout);
