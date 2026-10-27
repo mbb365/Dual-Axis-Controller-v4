@@ -268,9 +268,8 @@ export const HALO_CSS = `
     box-shadow: 0 4px 14px rgba(15, 23, 42, 0.2);
     pointer-events: none;
     z-index: 3;
+    /* No left/top transition: Halo eases the handle itself, and a second ease on top made it trail behind. */
     transition:
-        left 340ms cubic-bezier(0.22, 0.68, 0.2, 1),
-        top 340ms cubic-bezier(0.22, 0.68, 0.2, 1),
         background 220ms ease,
         box-shadow 220ms ease;
 }

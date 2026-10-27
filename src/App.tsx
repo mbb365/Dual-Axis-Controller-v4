@@ -56,7 +56,11 @@ import {
 } from './utils/controller-session';
 
 const CONTROL_SEND_INTERVAL_MS = 120;
-const CONTROL_SETTLE_DELAY_MS = 220;
+// After a drag the lights take a moment to report where they ended up, and their first reports are often from
+// earlier in the drag. The controls hold what the user set until the lights have been quiet this long...
+const CONTROL_SETTLE_QUIET_MS = 600;
+// ...or until this long after the drag, so a light that never gets there still shows where it really is.
+const CONTROL_SETTLE_MAX_MS = 2500;
 const DISCO_SEND_INTERVAL_MS = 900;
 const UI_MODE_SYNC_LOCK_MS = 1800;
 
@@ -309,6 +313,7 @@ export function CardApp({
     const lastCommandTime = useRef(0);
     const isUserInteracting = useRef(false);
     const interactionTimeout = useRef<number | null>(null);
+    const settleDeadline = useRef<number | null>(null);
     const controlSendTimeout = useRef<number | null>(null);
     const controlBatchInFlight = useRef(false);
     const discoSendInterval = useRef<number | null>(null);
@@ -337,6 +342,10 @@ export function CardApp({
     const [brightness, setBrightness] = useState(50);
     const [kelvin, setKelvin] = useState<number | null>(null);
     const [isOn, setIsOn] = useState(false);
+    // What the tile's pad was set to, shown until the lights catch up.
+    const [tileTarget, setTileTarget] = useState<{ hue: number; saturation: number; brightness: number } | null>(null);
+    // Counts finished settles, so the controls read the lights' latest state again when one ends.
+    const [settleCount, setSettleCount] = useState(0);
     const [uiMode, setUiMode] = useState<'temperature' | 'spectrum'>(initialControllerSession?.uiMode ?? 'temperature');
     const [selectedColorHue, setSelectedColorHue] = useState<number | null>(
         initialControllerSession?.selectedColorHue ?? null
@@ -927,6 +936,7 @@ export function CardApp({
         hass,
         isDiscoMode,
         controlledLightEntityId,
+        settleCount,
         supportsSpectrum,
         supportsTemperature,
         selectedColorHue,
@@ -935,13 +945,22 @@ export function CardApp({
 
     const resolvedLayout: CardLayout = layout === 'expanded' ? 'expanded' : 'compact';
 
+    const releaseInteraction = useCallback(() => {
+        isUserInteracting.current = false;
+        settleDeadline.current = null;
+        setTileTarget(null);
+        setSettleCount((count) => count + 1);
+    }, []);
+
     const markInteraction = useCallback((delayMs: number) => {
         isUserInteracting.current = true;
+        settleDeadline.current = null;
         if (interactionTimeout.current) window.clearTimeout(interactionTimeout.current);
         interactionTimeout.current = window.setTimeout(() => {
-            isUserInteracting.current = false;
+            interactionTimeout.current = null;
+            releaseInteraction();
         }, delayMs);
-    }, []);
+    }, [releaseInteraction]);
 
     const lockUiModeSync = useCallback((mode: 'temperature' | 'spectrum', durationMs = UI_MODE_SYNC_LOCK_MS) => {
         uiModeSyncLock.current = {
@@ -951,12 +970,12 @@ export function CardApp({
     }, []);
 
     const clearInteractionLock = useCallback(() => {
-        isUserInteracting.current = false;
         if (interactionTimeout.current) {
             window.clearTimeout(interactionTimeout.current);
             interactionTimeout.current = null;
         }
-    }, []);
+        releaseInteraction();
+    }, [releaseInteraction]);
 
     const stopDiscoMode = useCallback(() => {
         if (discoSendInterval.current) {
@@ -1018,15 +1037,37 @@ export function CardApp({
         setIsDiscoMode(true);
     }, [groupedLightIds, markInteraction, resetQueuedControlState]);
 
-    const endControlInteraction = useCallback(() => {
+    // Waits for the lights to go quiet (and for the last command to be sent) before the controls follow them again.
+    const holdUntilLightsSettle = useCallback(() => {
+        const deadline = settleDeadline.current;
+        if (deadline == null) return;
         if (interactionTimeout.current) {
             window.clearTimeout(interactionTimeout.current);
         }
-        interactionTimeout.current = window.setTimeout(() => {
-            isUserInteracting.current = false;
-            interactionTimeout.current = null;
-        }, CONTROL_SETTLE_DELAY_MS);
-    }, []);
+
+        const wait = () => {
+            interactionTimeout.current = window.setTimeout(() => {
+                interactionTimeout.current = null;
+                const isStillSending = controlBatchInFlight.current || pendingControlCommand.current != null;
+                if (isStillSending && Date.now() < deadline) {
+                    wait();
+                    return;
+                }
+                releaseInteraction();
+            }, Math.max(0, Math.min(CONTROL_SETTLE_QUIET_MS, deadline - Date.now())));
+        };
+        wait();
+    }, [releaseInteraction]);
+
+    const endControlInteraction = useCallback(() => {
+        settleDeadline.current = Date.now() + CONTROL_SETTLE_MAX_MS;
+        holdUntilLightsSettle();
+    }, [holdUntilLightsSettle]);
+
+    // Each report from the lights while settling starts the quiet wait again.
+    useEffect(() => {
+        holdUntilLightsSettle();
+    }, [activeLightStateSignature, groupLightStateSignature, groupedLightStateSignature, holdUntilLightsSettle]);
 
     useEffect(() => {
         if (!isDiscoMode) {
@@ -1331,6 +1372,7 @@ export function CardApp({
 
     const beginControlInteraction = useCallback(() => {
         isUserInteracting.current = true;
+        settleDeadline.current = null;
         if (interactionTimeout.current) {
             window.clearTimeout(interactionTimeout.current);
             interactionTimeout.current = null;
@@ -1875,11 +1917,22 @@ export function CardApp({
     const tilePadMode: 'temperature' | 'spectrum' = pad === 'colour' ? 'spectrum' : 'temperature';
 
     // The tile's pad always moves every light together, in the pad the card is set to.
+    const handleTilePadStart = useCallback(() => {
+        stopDiscoMode();
+        isUserInteracting.current = true;
+        settleDeadline.current = null;
+        if (interactionTimeout.current) {
+            window.clearTimeout(interactionTimeout.current);
+            interactionTimeout.current = null;
+        }
+    }, [stopDiscoMode]);
+
     const handleTilePadChange = useCallback(
         (nextHue: number, nextSaturation: number, nextBrightness: number) => {
             stopDiscoMode();
             const targetLight = getLightState(hassRef.current, entityId) ?? groupLight;
             if (!targetLight) return;
+            setTileTarget({ hue: nextHue, saturation: nextSaturation, brightness: nextBrightness });
             queueControlCommand([
                 buildQueuedControlCommand(
                     entityId,
@@ -1894,7 +1947,8 @@ export function CardApp({
 
     const handleTileControlEnd = useCallback(() => {
         flushQueuedControlCommand(true);
-    }, [flushQueuedControlCommand]);
+        endControlInteraction();
+    }, [endControlInteraction, flushQueuedControlCommand]);
 
     const handleGroupedLightSelect = useCallback((nextEntityId: string) => {
         const targetLight = getLightState(hass, nextEntityId);
@@ -2098,7 +2152,22 @@ export function CardApp({
         controlScope: effectiveControlScope,
         controlledLightEntityId,
     });
-    const tilePadState = buildGroupedAggregateControlState(hass, groupedLightIds, tilePadMode, groupLight);
+    const liveTilePadState = buildGroupedAggregateControlState(hass, groupedLightIds, tilePadMode, groupLight);
+    const tileKelvinLight = groupLight ?? light;
+    const tilePadState = tileTarget
+        ? {
+              ...liveTilePadState,
+              ...tileTarget,
+              isOn: true,
+              kelvin:
+                  tilePadMode === 'temperature' && tileKelvinLight
+                      ? kelvinFromXPosition(
+                            xFractionFromHueSat(tileTarget.hue, tileTarget.saturation, 'temperature'),
+                            tileKelvinLight
+                        )
+                      : liveTilePadState.kelvin,
+          }
+        : liveTilePadState;
     const tileIcon = getEntityIcon(hass, entityId, groupedLightIds.length ? 'mdi:lightbulb-group' : 'mdi:lightbulb');
     const formatReading = (
         readingIsOn: boolean,
@@ -2151,7 +2220,7 @@ export function CardApp({
                 onHold={onHoldAction}
                 onDoubleTap={onDoubleTapAction}
                 onPadChange={handleTilePadChange}
-                onPadStart={stopDiscoMode}
+                onPadStart={handleTilePadStart}
                 onPadEnd={handleTileControlEnd}
             />
 

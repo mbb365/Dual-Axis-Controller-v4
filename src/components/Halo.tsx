@@ -370,6 +370,8 @@ export function Halo({
         const selection = selectionFromPosition(event);
         if (!selection) return;
 
+        // The handle follows the finger on every move; only the light commands wait for a meaningful change.
+        setDragSelection(selection);
         if (!force && !hasMeaningfulSelectionDelta(selection)) {
             return selection;
         }
@@ -414,7 +416,6 @@ export function Halo({
         }
 
         lastEmittedSelectionRef.current = selection;
-        setDragSelection(selection);
         onChange(selection.hue, selection.saturation, selection.brightness);
         return selection;
     };
@@ -566,11 +567,16 @@ export function Halo({
         }
 
         if (isDragging) {
-            updateFromPosition(event, true);
+            const finalSelection = updateFromPosition(event, true);
             if (event.currentTarget.hasPointerCapture(event.pointerId)) {
                 event.currentTarget.releasePointerCapture(event.pointerId);
             }
             onInteractionEnd?.();
+            // Stay where the finger let go, instead of going back to where the drag began.
+            if (finalSelection) {
+                setDisplaySelection(finalSelection);
+                displaySelectionRef.current = finalSelection;
+            }
         }
         setIsDragging(false);
         setDragSelection(null);

@@ -7,6 +7,9 @@ const isMobileDemo =
     (window.location.pathname.endsWith('/mobile.html') || window.location.pathname === '/mobile.html');
 // Add ?dark to the address to see the card in Home Assistant's dark mode.
 const isDarkDemo = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('dark');
+// Add ?latency=400 to answer light commands after 400 ms, as a real Home Assistant and its lights do.
+const mockLatencyMs =
+    typeof window !== 'undefined' ? Number(new URLSearchParams(window.location.search).get('latency')) || 0 : 0;
 
 const demoScenes = {
     'scene.preview_focus': {
@@ -344,6 +347,10 @@ function MockHomeAssistant() {
                 }
 
                 if (domain !== 'light') return;
+
+                if (mockLatencyMs) {
+                    await new Promise((resolve) => window.setTimeout(resolve, mockLatencyMs));
+                }
 
                 setMemberStates((previous) => {
                     const targetEntityId = typeof serviceData.entity_id === 'string' ? serviceData.entity_id : '';
