@@ -2,7 +2,7 @@ window.process ??= { env: { NODE_ENV: 'production' } };
 
 import { createRoot } from 'react-dom/client';
 import { CardApp } from './App';
-import type { CardLayout, DashboardTile } from './components/CompactCard';
+import type { CardLayout, TilePad } from './components/CompactCard';
 
 interface ActionConfig {
     action: string;
@@ -15,7 +15,7 @@ interface DualControllerConfig {
     name?: string;
     icon?: string;
     layout?: CardLayout | 'auto';
-    tile?: DashboardTile;
+    pad?: TilePad;
     tap_action?: ActionConfig;
     hold_action?: ActionConfig;
     double_tap_action?: ActionConfig;
@@ -31,7 +31,7 @@ class DualControllerCard extends HTMLElement {
             ...config,
             entity: config.entity ?? '',
             layout: 'auto',
-            tile: config.tile === 'temperature' || config.tile === 'colour' ? config.tile : 'light',
+            pad: config.pad === 'colour' ? 'colour' : 'temperature',
         };
         this._render();
     }
@@ -53,11 +53,10 @@ class DualControllerCard extends HTMLElement {
     }
 
     public getCardSize() {
-        return this._config?.tile === 'temperature' || this._config?.tile === 'colour' ? 5 : 3;
+        return 5;
     }
 
-    // The HomeCore tiles are 140 (light tile) or 252 (tile with a pad) tall, so they set their own height
-    // instead of using HA's 56 px rows.
+    // The DAC light tile is 252 tall, so it sets its own height instead of using HA's 56 px rows.
     public getGridOptions() {
         return {
             rows: 'auto',
@@ -72,21 +71,20 @@ class DualControllerCard extends HTMLElement {
                 { name: 'entity', required: true, selector: { entity: { domain: 'light' } } },
                 { name: 'name', selector: { text: {} } },
                 {
-                    name: 'tile',
+                    name: 'pad',
                     selector: {
                         select: {
                             mode: 'dropdown',
                             options: [
-                                { value: 'light', label: 'Light tile' },
-                                { value: 'temperature', label: 'Temperature pad' },
-                                { value: 'colour', label: 'Colour pad' },
+                                { value: 'temperature', label: 'Temperature' },
+                                { value: 'colour', label: 'Colour' },
                             ],
                         },
                     },
                 },
             ],
             computeLabel: (schema: { name: string }) =>
-                ({ entity: 'Entity', name: 'Name', tile: 'On the dashboard' })[schema.name],
+                ({ entity: 'Entity', name: 'Name', pad: 'Pad on the tile' })[schema.name],
         };
     }
 
@@ -97,7 +95,7 @@ class DualControllerCard extends HTMLElement {
             type: 'custom:dual-controller-v3',
             entity: lightEntity || 'light.my_light',
             layout: 'auto',
-            tile: 'light',
+            pad: 'temperature',
         };
     }
 
@@ -156,7 +154,7 @@ class DualControllerCard extends HTMLElement {
                 entityId={this._config.entity ?? ''}
                 name={this._config.name}
                 layout={this._config.layout ?? 'auto'}
-                tile={this._config.tile ?? 'light'}
+                pad={this._config.pad ?? 'temperature'}
                 onTapAction={this._config.tap_action ? () => this._dispatchAction('tap') : undefined}
                 onHoldAction={this._config.hold_action ? () => this._dispatchAction('hold') : undefined}
                 onDoubleTapAction={
@@ -176,7 +174,7 @@ if (!customCards.some((card) => card.type === 'dual-controller-v3')) {
     customCards.push({
         type: 'dual-controller-v3',
         name: 'Dual Axis Controller',
-        description: 'A HomeCore light tile, or a tile-size pad, that opens a two-axis controller for a light or a group.',
+        description: 'A HomeCore light tile with a two-axis pad, for a light or a group, that opens the full controller.',
         preview: true,
         documentationURL: 'https://github.com/mbb365/Dual-Axis-Controller-v4',
     });

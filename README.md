@@ -26,14 +26,10 @@ Recommended card configuration:
 ```yaml
 type: custom:dual-controller-v3
 entity: light.living_room
-tile: light
+pad: temperature
 ```
 
-`tile` sets what sits on the dashboard. You can also pick it in the card editor.
-
-- `light` (default): the HomeCore light tile. The icon turns the lights on and off, the name opens the controller, and the bar sets brightness.
-- `temperature`: the tile-size controller with a Temperature pad. Drag the pad to move every light together.
-- `colour`: the tile-size controller with a Colour pad.
+On the dashboard the card is a HomeCore light tile with a pad. The icon turns the lights on and off, the name opens the full controller, and dragging the pad moves every light together. `pad` sets whether the tile's pad shows `temperature` (the default) or `colour`; you can also pick it in the card editor.
 
 ## Notes
 

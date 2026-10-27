@@ -415,9 +415,8 @@ function MockHomeAssistant() {
                     margin: '0 auto',
                 }}
             >
-                <CardApp hass={hass} entityId="light.preview_group" layout="compact" tile="light" />
-                <CardApp hass={hass} entityId="light.preview_group" layout="compact" tile="temperature" />
-                <CardApp hass={hass} entityId="light.preview_group" layout="compact" tile="colour" />
+                <CardApp hass={hass} entityId="light.preview_group" layout="compact" pad="temperature" />
+                <CardApp hass={hass} entityId="light.preview_group" layout="compact" pad="colour" />
             </div>
         </div>
     );

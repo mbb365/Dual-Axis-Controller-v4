@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CardLayout, DashboardTile, GroupedLightOption } from './components/CompactCard';
+import type { CardLayout, GroupedLightOption, TilePad } from './components/CompactCard';
 import { buildIconBackground } from './components/compact-card/display-utils';
 import homeCoreStyles from './components/homecore/homecore.css?inline';
 import { ensureHomeCoreFonts } from './components/homecore/fonts';
 import { HomeCoreController } from './components/homecore/HomeCoreController';
-import { LightTile, PadTile } from './components/homecore/HomeCoreTiles';
+import { DacLightTile } from './components/homecore/HomeCoreTiles';
 import type { HaloMarker, HaloVisualStyle } from './components/Halo';
 import {
     activateScene,
@@ -65,7 +65,7 @@ export interface CardAppProps {
     entityId: string;
     name?: string;
     layout?: CardLayout | 'auto';
-    tile?: DashboardTile;
+    pad?: TilePad;
     onTapAction?: () => void;
     onHoldAction?: () => void;
     onDoubleTapAction?: () => void;
@@ -253,7 +253,7 @@ export function CardApp({
     entityId,
     name,
     layout = 'auto',
-    tile = 'light',
+    pad = 'temperature',
     onTapAction,
     onHoldAction,
     onDoubleTapAction,
@@ -1872,27 +1872,9 @@ export function CardApp({
         ensureHomeCoreFonts();
     }, []);
 
-    const tilePadMode: 'temperature' | 'spectrum' = tile === 'colour' ? 'spectrum' : 'temperature';
+    const tilePadMode: 'temperature' | 'spectrum' = pad === 'colour' ? 'spectrum' : 'temperature';
 
-    // The light tile's bar changes brightness only; the colour stays as it is.
-    const handleTileBrightnessChange = useCallback(
-        (nextBrightness: number) => {
-            stopDiscoMode();
-            queueControlCommand([
-                {
-                    entityId,
-                    turnOn: nextBrightness > 0,
-                    brightness: nextBrightness,
-                    hue: 0,
-                    saturation: 0,
-                    uiMode: 'temperature',
-                },
-            ]);
-        },
-        [entityId, queueControlCommand, stopDiscoMode]
-    );
-
-    // The tile-size controller always moves every light together, in the pad the card is set to.
+    // The tile's pad always moves every light together, in the pad the card is set to.
     const handleTilePadChange = useCallback(
         (nextHue: number, nextSaturation: number, nextBrightness: number) => {
             stopDiscoMode();
@@ -2102,11 +2084,6 @@ export function CardApp({
 
     const {
         compactLightName,
-        compactUiMode,
-        compactBrightness,
-        compactHue,
-        compactKelvin,
-        compactIsOn,
         expandedPrimaryName,
         expandedSecondaryName,
     } = buildCompactCardState({
@@ -2153,47 +2130,30 @@ export function CardApp({
     return (
         <div>
             <style>{homeCoreStyles}</style>
-            {tile === 'light' ? (
-                <LightTile
-                    isDarkMode={isDarkMode}
-                    name={compactLightName}
-                    icon={tileIcon}
-                    isOn={compactIsOn}
-                    valueText={formatReading(compactIsOn, compactBrightness, compactUiMode, compactKelvin, compactHue)}
-                    brightness={compactBrightness}
-                    onToggle={handleCompactToggle}
-                    onOpen={handleTap}
-                    onHold={onHoldAction}
-                    onDoubleTap={onDoubleTapAction}
-                    onBrightnessChange={handleTileBrightnessChange}
-                    onBrightnessCommit={handleTileControlEnd}
-                />
-            ) : (
-                <PadTile
-                    isDarkMode={isDarkMode}
-                    name={compactLightName}
-                    icon={tileIcon}
-                    isOn={tilePadState.isOn}
-                    valueText={formatReading(
-                        tilePadState.isOn,
-                        tilePadState.brightness,
-                        tilePadMode,
-                        tilePadState.kelvin,
-                        tilePadState.hue
-                    )}
-                    mode={tilePadMode}
-                    hue={tilePadState.hue}
-                    saturation={tilePadState.saturation}
-                    brightness={tilePadState.brightness}
-                    onToggle={handleCompactToggle}
-                    onOpen={handleTap}
-                    onHold={onHoldAction}
-                    onDoubleTap={onDoubleTapAction}
-                    onPadChange={handleTilePadChange}
-                    onPadStart={stopDiscoMode}
-                    onPadEnd={handleTileControlEnd}
-                />
-            )}
+            <DacLightTile
+                isDarkMode={isDarkMode}
+                name={compactLightName}
+                icon={tileIcon}
+                isOn={tilePadState.isOn}
+                valueText={formatReading(
+                    tilePadState.isOn,
+                    tilePadState.brightness,
+                    tilePadMode,
+                    tilePadState.kelvin,
+                    tilePadState.hue
+                )}
+                mode={tilePadMode}
+                hue={tilePadState.hue}
+                saturation={tilePadState.saturation}
+                brightness={tilePadState.brightness}
+                onToggle={handleCompactToggle}
+                onOpen={handleTap}
+                onHold={onHoldAction}
+                onDoubleTap={onDoubleTapAction}
+                onPadChange={handleTilePadChange}
+                onPadStart={stopDiscoMode}
+                onPadEnd={handleTileControlEnd}
+            />
 
             {showPopup ? (
                 <HomeCoreController

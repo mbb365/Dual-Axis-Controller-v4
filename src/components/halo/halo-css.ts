@@ -607,7 +607,7 @@ export const HALO_CSS = `
     }
 }
 
-/* HomeCore (v9): 0.4 edge, an empty track when off, and the tile-size pad (full width, 158 tall, corner 16). */
+/* HomeCore (v9): 0.4 edge, an empty track when off, and the DAC light tile's pad (full width, 158 tall, corner 16). */
 .halo__pad::after {
     border-radius: inherit;
     box-shadow: inset 0 0 0 0.4px var(--hc-line, rgba(38, 34, 30, 0.12));

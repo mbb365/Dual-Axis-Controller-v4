@@ -1,7 +1,7 @@
 export type CardLayout = 'compact' | 'expanded';
 
-/** What the dashboard shows: the light tile, or the tile-size controller with a Temperature or Colour pad. */
-export type DashboardTile = 'light' | 'temperature' | 'colour';
+/** Which pad the dashboard tile shows. */
+export type TilePad = 'temperature' | 'colour';
 
 export interface GroupedLightOption {
     entityId: string;

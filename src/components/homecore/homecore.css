@@ -1,5 +1,5 @@
 /* HomeCore look for the Dual Axis Controller (v9). Values come from the Figma "Dual Axis Controller" section on the
-   Spacing rules page: the light tile, the tile-size controller, and the controller with its settings panel. */
+   Spacing rules page: the DAC light tile (470:12396), and the controller with its settings panel. */
 
 .hc {
     --hc-ground: #eeebe8;
@@ -46,8 +46,7 @@
     color: inherit;
 }
 
-.hc button:focus-visible,
-.hc [role='slider']:focus-visible {
+.hc button:focus-visible {
     outline: 2px solid var(--hc-text);
     outline-offset: 2px;
 }
@@ -182,7 +181,7 @@
     font: 500 13px/18px var(--hc-font);
 }
 
-/* ---------- dashboard: light tile ---------- */
+/* ---------- dashboard: the DAC light tile (Figma 470:12396) ---------- */
 
 .hcTile {
     display: flex;
@@ -203,33 +202,7 @@
     min-width: 0;
 }
 
-.hcBar {
-    position: relative;
-    height: 46px;
-    overflow: hidden;
-    border-radius: 16px;
-    background: var(--hc-tile);
-    cursor: pointer;
-    touch-action: none;
-}
-
-.hcBar > i {
-    position: absolute;
-    inset: 0 auto 0 0;
-    background: linear-gradient(90deg, #ffc247, #ffaa00);
-}
-
-.hcBar::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    box-shadow: var(--hc-hair-all);
-    pointer-events: none;
-}
-
-/* ---------- dashboard: tile-size controller (the pad sits where the bar was: full width, 158 tall) ---------- */
-
+/* its pad: full width, 158 tall, corner 16 */
 .hcTilePad {
     flex: none;
     width: 100%;
