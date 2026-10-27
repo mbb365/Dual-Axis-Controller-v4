@@ -5,6 +5,8 @@ import { CardApp } from './App';
 const isMobileDemo =
     typeof window !== 'undefined' &&
     (window.location.pathname.endsWith('/mobile.html') || window.location.pathname === '/mobile.html');
+// Add ?dark to the address to see the card in Home Assistant's dark mode.
+const isDarkDemo = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('dark');
 
 const demoScenes = {
     'scene.preview_focus': {
@@ -75,7 +77,7 @@ function buildGroupState(memberStates: Record<string, any>) {
     return {
         state: isOn ? 'on' : 'off',
         attributes: {
-            friendly_name: 'Living room group',
+            friendly_name: 'Living room',
             entity_id: [...groupedLightIds],
             brightness,
             color_mode: primaryMember?.attributes?.color_mode ?? 'color_temp',
@@ -95,6 +97,7 @@ function MockHomeAssistant() {
             state: 'on',
             attributes: {
                 friendly_name: 'Floor lamp',
+                icon: 'mdi:floor-lamp',
                 brightness: 237,
                 color_mode: 'color_temp',
                 color_temp: 412,
@@ -109,6 +112,7 @@ function MockHomeAssistant() {
             state: 'on',
             attributes: {
                 friendly_name: 'Desk light',
+                icon: 'mdi:desk-lamp',
                 brightness: 190,
                 color_mode: 'color_temp',
                 color_temp: 355,
@@ -123,6 +127,7 @@ function MockHomeAssistant() {
             state: 'off',
             attributes: {
                 friendly_name: 'Corner lamp',
+                icon: 'mdi:lamp',
                 brightness: 0,
                 color_mode: 'hs',
                 color_temp: null as unknown as number,
@@ -137,6 +142,7 @@ function MockHomeAssistant() {
             state: 'on',
             attributes: {
                 friendly_name: 'Shelf light',
+                icon: 'mdi:lightbulb',
                 brightness: 142,
                 color_mode: 'color_temp',
                 color_temp: 298,
@@ -151,6 +157,7 @@ function MockHomeAssistant() {
             state: 'on',
             attributes: {
                 friendly_name: 'Wall wash',
+                icon: 'mdi:wall-sconce-flat',
                 brightness: 214,
                 color_mode: 'hs',
                 color_temp: null as unknown as number,
@@ -175,6 +182,7 @@ function MockHomeAssistant() {
 
     const hass = useMemo(
         () => ({
+            themes: { darkMode: isDarkDemo },
             states: {
                 'light.preview_group': buildGroupState(memberStates),
                 ...memberStates,
@@ -391,31 +399,25 @@ function MockHomeAssistant() {
         <div
             style={{
                 minHeight: '100vh',
-                background: isMobileDemo ? '#dfe4ec' : '#f3f4f6',
+                background: isDarkDemo ? '#090909' : '#eeebe8',
                 padding: isMobileDemo ? '20px 12px' : '32px',
                 boxSizing: 'border-box',
                 fontFamily: 'system-ui, sans-serif',
-                display: 'grid',
-                placeItems: 'center',
             }}
         >
             <div
                 style={{
-                    width: isMobileDemo ? 'min(100%, 390px)' : '100%',
-                    maxWidth: isMobileDemo ? '390px' : '520px',
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, 280px)',
+                    gap: '10px',
+                    justifyContent: 'center',
+                    maxWidth: isMobileDemo ? '390px' : '880px',
                     margin: '0 auto',
-                    minHeight: isMobileDemo ? '844px' : undefined,
-                    borderRadius: isMobileDemo ? '32px' : undefined,
-                    padding: isMobileDemo ? '18px 14px' : undefined,
-                    background: isMobileDemo ? '#f7f8fb' : undefined,
-                    boxShadow: isMobileDemo
-                        ? '0 24px 60px rgba(15, 23, 42, 0.18), inset 0 0 0 1px rgba(255, 255, 255, 0.55)'
-                        : undefined,
-                    boxSizing: 'border-box',
-                    overflow: 'hidden',
                 }}
             >
-                <CardApp hass={hass} entityId="light.preview_group" layout="compact" />
+                <CardApp hass={hass} entityId="light.preview_group" layout="compact" tile="light" />
+                <CardApp hass={hass} entityId="light.preview_group" layout="compact" tile="temperature" />
+                <CardApp hass={hass} entityId="light.preview_group" layout="compact" tile="colour" />
             </div>
         </div>
     );

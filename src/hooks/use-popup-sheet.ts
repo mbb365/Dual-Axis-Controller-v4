@@ -17,7 +17,7 @@ export function usePopupSheet(
     const isMobilePreviewRoute =
         typeof window !== 'undefined' &&
         (window.location.pathname.endsWith('/mobile.html') || window.location.pathname === '/mobile.html');
-    const isMobilePopupViewport = typeof window !== 'undefined' ? isMobilePreviewRoute || window.innerWidth <= 640 : false;
+    const isMobilePopupViewport = typeof window !== 'undefined' ? isMobilePreviewRoute || window.innerWidth < 620 : false;
     const mobilePopupTopInset = 'calc(env(safe-area-inset-top, 0px) + 56px)';
 
     const closePopup = useCallback(() => {

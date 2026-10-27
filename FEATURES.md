@@ -10,7 +10,7 @@ These are the controller behaviors that already existed in the older `v8.0.16` m
 - `Group Relative` control: move the formation while preserving each light's offset from the group.
 - `Individual` control: select one member light and control that light directly.
 - Group aggregation: the card reads grouped lights as one controller state for power, brightness, and position summaries.
-- Controller styles: `Standard`, `Matrix`, and `Brick`.
+- Controller styles: `Standard` and `Brick` (`Matrix` was removed in v9; saved Matrix choices open as Standard).
 - Group member list: select lights from the group list and view per-light state in grouped control.
 - Last-lit restore behavior: turning a light or group back on restores the previous usable output instead of always coming back at zero.
 

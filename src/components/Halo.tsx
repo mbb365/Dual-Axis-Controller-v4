@@ -21,12 +21,6 @@ const PIXEL_GRID_CELLS = Array.from({ length: PIXEL_GRID_SIZE * PIXEL_GRID_SIZE 
     key: index,
     row: Math.floor(index / PIXEL_GRID_SIZE),
 }));
-const MATRIX_GRID_SIZE = 32;
-const MATRIX_GRID_CELLS = Array.from({ length: MATRIX_GRID_SIZE * MATRIX_GRID_SIZE }, (_, index) => ({
-    column: index % MATRIX_GRID_SIZE,
-    key: index,
-    row: Math.floor(index / MATRIX_GRID_SIZE),
-}));
 
 interface HaloProps {
     hue: number;
@@ -51,6 +45,7 @@ interface HaloProps {
     visualStyle?: HaloVisualStyle;
     indicatorVariant?: 'default' | 'group-relative';
     formationIndicator?: HaloIndicatorSelection | null;
+    size?: 'full' | 'tile';
 }
 
 export interface HaloMarker {
@@ -130,6 +125,7 @@ export function Halo({
     visualStyle = 'plotter',
     indicatorVariant = 'default',
     formationIndicator = null,
+    size = 'full',
 }: HaloProps) {
     const buildSelection = useCallback((
         nextHue: number,
@@ -783,51 +779,12 @@ export function Halo({
         ]
     );
 
-    const matrixCells = useMemo(
-        () =>
-            visualStyle !== 'matrix'
-                ? null
-                : MATRIX_GRID_CELLS.map((cell) => {
-                      const xFraction = (cell.column + 0.5) / MATRIX_GRID_SIZE;
-                      const yFraction = (cell.row + 0.5) / MATRIX_GRID_SIZE;
-                      const selection = selectionFromFractions(xFraction, yFraction, mode, lockedSpectrumHue);
-                      const cellXPercent = xFraction * 100;
-                      const cellYPercent = yFraction * 100;
-                      const distance = Math.hypot(
-                          cellXPercent - visibleSelection.xPercent,
-                          cellYPercent - visibleSelection.yPercent
-                      );
-                      const glowStrength = Math.max(0, 1 - distance / 24);
-                      const glowOpacityBoost = glowStrength * 0.42;
-                      const glowBlur = 8 + glowStrength * 14;
-                      const glowSpread = glowStrength * 8;
-                      return {
-                          key: cell.key,
-                          color: isOn
-                              ? buildSurfaceNodeColor(mode, selection, lockedSpectrumHue, visualStyle)
-                              : 'rgba(71, 85, 105, 0.9)',
-                          opacity: isOn ? 0.18 + selection.brightness / 140 + glowOpacityBoost : 0.44,
-                          scale: isOn ? 0.32 * (1 + glowStrength * 2) : 0.32,
-                          boxShadow:
-                              isOn && glowStrength > 0.02
-                                  ? `0 0 ${glowBlur}px rgba(255, 255, 255, ${glowStrength * 0.12}), 0 0 ${glowSpread}px ${buildSurfaceNodeColor(
-                                        mode,
-                                        selection,
-                                        lockedSpectrumHue,
-                                        visualStyle
-                                    )}`
-                                  : undefined,
-                      };
-                  }),
-        [isOn, lockedSpectrumHue, mode, visibleSelection.xPercent, visibleSelection.yPercent, visualStyle]
-    );
-
     return (
-        <div className="halo">
+        <div className={classNames('halo', { 'is-size-tile': size === 'tile' })}>
             <style>{HALO_CSS}</style>
             <div
                 className={classNames('halo__pad-shell', {
-                    'is-borderless-style': visualStyle === 'matrix' || visualStyle === 'pixel',
+                    'is-borderless-style': visualStyle === 'pixel',
                 })}
             >
                 <div
@@ -894,27 +851,10 @@ export function Halo({
                             ))}
                         </div>
                     ) : null}
-                    {matrixCells ? (
-                        <div className="halo__matrix-surface" aria-hidden="true">
-                            {matrixCells.map((cell) => (
-                                <span key={cell.key} className="halo__matrix-node-wrap">
-                                    <span
-                                        className="halo__matrix-node"
-                                        style={{
-                                            background: cell.color,
-                                            opacity: cell.opacity,
-                                            transform: `scale(${cell.scale})`,
-                                            boxShadow: cell.boxShadow,
-                                        }}
-                                    />
-                                </span>
-                            ))}
-                        </div>
-                    ) : null}
                 </div>
                 <div ref={overlayRef} className="halo__overlay">
                 {isDiscoMode ? (
-                    <div className={`halo__disco-overlay${visualStyle === 'matrix' ? ' halo__disco-overlay--matrix' : ''}`}>
+                    <div className="halo__disco-overlay">
                         <div className="halo__disco-message">
                             <strong className="halo__disco-title">DISCO MODE!</strong>
                             <p className="halo__disco-copy">

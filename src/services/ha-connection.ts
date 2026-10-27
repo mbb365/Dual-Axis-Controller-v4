@@ -7,6 +7,7 @@ export interface LightState {
     state: string;
     attributes: {
         friendly_name?: string;
+        icon?: string;
         entity_id?: string[] | string;
         lights?: string[] | string;
         brightness?: number;
@@ -39,6 +40,17 @@ function hasExplicitNullAttribute(attributes: Record<string, unknown>, key: stri
 }
 
 /** Returns the current state of a light entity from the hass object. */
+/** The icon Home Assistant shows for an entity: its own icon, then the registry's, then the given default. */
+export function getEntityIcon(
+    hass: { entities?: Record<string, { icon?: string | null } | undefined> } | null | undefined,
+    entityId: string,
+    fallback: string
+): string {
+    const stateIcon = getLightState(hass, entityId)?.attributes.icon;
+    const registryIcon = hass?.entities?.[entityId]?.icon;
+    return (typeof stateIcon === 'string' && stateIcon) || (typeof registryIcon === 'string' && registryIcon) || fallback;
+}
+
 export function getLightState(hass: any, entityId: string): LightState | null {
     if (!hass || !entityId) return null;
     return hass.states[entityId] || null;

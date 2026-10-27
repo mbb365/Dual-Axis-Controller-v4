@@ -2,7 +2,7 @@ window.process ??= { env: { NODE_ENV: 'production' } };
 
 import { createRoot } from 'react-dom/client';
 import { CardApp } from './App';
-import type { CardLayout } from './components/CompactCard';
+import type { CardLayout, DashboardTile } from './components/CompactCard';
 
 interface ActionConfig {
     action: string;
@@ -15,6 +15,7 @@ interface DualControllerConfig {
     name?: string;
     icon?: string;
     layout?: CardLayout | 'auto';
+    tile?: DashboardTile;
     tap_action?: ActionConfig;
     hold_action?: ActionConfig;
     double_tap_action?: ActionConfig;
@@ -30,6 +31,7 @@ class DualControllerCard extends HTMLElement {
             ...config,
             entity: config.entity ?? '',
             layout: 'auto',
+            tile: config.tile === 'temperature' || config.tile === 'colour' ? config.tile : 'light',
         };
         this._render();
     }
@@ -51,16 +53,40 @@ class DualControllerCard extends HTMLElement {
     }
 
     public getCardSize() {
-        return 1;
+        return this._config?.tile === 'temperature' || this._config?.tile === 'colour' ? 5 : 3;
     }
 
+    // The HomeCore tiles are 140 (light tile) or 252 (tile with a pad) tall, so they set their own height
+    // instead of using HA's 56 px rows.
     public getGridOptions() {
         return {
-            rows: 1,
+            rows: 'auto',
             columns: 6,
-            min_rows: 1,
-            max_rows: 1,
             min_columns: 6,
+        };
+    }
+
+    static getConfigForm() {
+        return {
+            schema: [
+                { name: 'entity', required: true, selector: { entity: { domain: 'light' } } },
+                { name: 'name', selector: { text: {} } },
+                {
+                    name: 'tile',
+                    selector: {
+                        select: {
+                            mode: 'dropdown',
+                            options: [
+                                { value: 'light', label: 'Light tile' },
+                                { value: 'temperature', label: 'Temperature pad' },
+                                { value: 'colour', label: 'Colour pad' },
+                            ],
+                        },
+                    },
+                },
+            ],
+            computeLabel: (schema: { name: string }) =>
+                ({ entity: 'Entity', name: 'Name', tile: 'On the dashboard' })[schema.name],
         };
     }
 
@@ -71,6 +97,7 @@ class DualControllerCard extends HTMLElement {
             type: 'custom:dual-controller-v3',
             entity: lightEntity || 'light.my_light',
             layout: 'auto',
+            tile: 'light',
         };
     }
 
@@ -129,6 +156,7 @@ class DualControllerCard extends HTMLElement {
                 entityId={this._config.entity ?? ''}
                 name={this._config.name}
                 layout={this._config.layout ?? 'auto'}
+                tile={this._config.tile ?? 'light'}
                 onTapAction={this._config.tap_action ? () => this._dispatchAction('tap') : undefined}
                 onHoldAction={this._config.hold_action ? () => this._dispatchAction('hold') : undefined}
                 onDoubleTapAction={
@@ -148,7 +176,7 @@ if (!customCards.some((card) => card.type === 'dual-controller-v3')) {
     customCards.push({
         type: 'dual-controller-v3',
         name: 'Dual Axis Controller',
-        description: 'Compact dashboard launcher and expanded light controller for Home Assistant.',
+        description: 'A HomeCore light tile, or a tile-size pad, that opens a two-axis controller for a light or a group.',
         preview: true,
         documentationURL: 'https://github.com/mbb365/Dual-Axis-Controller-v4',
     });

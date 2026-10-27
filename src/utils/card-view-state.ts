@@ -1,6 +1,6 @@
 import type { GroupedLightOption } from '../components/CompactCard';
 import type { HaloMarker } from '../components/Halo';
-import { getLightState, isLightAvailable, isLightOn } from '../services/ha-connection';
+import { getEntityIcon, getLightState, isLightAvailable, isLightOn } from '../services/ha-connection';
 import {
     controlValuesFromPosition,
     formatGroupedLightValue,
@@ -115,6 +115,7 @@ export function buildGroupedLights(hass: HassLike, groupedLightIds: string[]): G
 
             return {
                 entityId: memberId,
+                icon: getEntityIcon(hass, memberId, 'mdi:lightbulb'),
                 isOn: isLightOn(memberState),
                 isMuted,
                 name: memberState.attributes.friendly_name || memberId,

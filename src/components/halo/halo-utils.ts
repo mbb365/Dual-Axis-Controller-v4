@@ -12,21 +12,15 @@ export interface HaloSelection {
 }
 
 export type HaloMode = 'temperature' | 'spectrum';
-export type HaloVisualStyle = 'pixel' | 'matrix' | 'plotter';
+export type HaloVisualStyle = 'pixel' | 'plotter';
 
 const STYLE_RESOLUTION: Record<HaloVisualStyle, { x: number; y: number }> = {
     pixel: { x: 10, y: 10 },
-    matrix: { x: 32, y: 32 },
     plotter: { x: 1, y: 1 },
 };
 
 function clamp01(value: number) {
     return Math.max(0, Math.min(1, value));
-}
-
-function quantizeFraction(value: number, steps: number) {
-    if (steps <= 1) return clamp01(value);
-    return clamp01(Math.round(value * (steps - 1)) / (steps - 1));
 }
 
 function quantizeFractionToCellCenter(value: number, steps: number) {
@@ -39,9 +33,6 @@ function quantizeFractionToCellCenter(value: number, steps: number) {
 function quantizeFractionForStyle(value: number, style: HaloVisualStyle, axis: 'x' | 'y') {
     if (style === 'pixel') {
         return quantizeFractionToCellCenter(value, STYLE_RESOLUTION[style][axis]);
-    }
-    if (style === 'matrix') {
-        return quantizeFraction(value, STYLE_RESOLUTION[style][axis]);
     }
     return clamp01(value);
 }
@@ -216,10 +207,6 @@ export function buildPadBackground(
         return 'transparent';
     }
 
-    if (visualStyle === 'matrix' && !isOn) {
-        return 'transparent';
-    }
-
     if (!isOn) {
         return 'radial-gradient(circle at 50% 50%, rgba(196, 181, 253, 0.34) 0%, rgba(196, 181, 253, 0.14) 26%, rgba(217, 222, 230, 0.08) 48%, rgba(216, 220, 228, 0) 72%), linear-gradient(145deg, rgba(239, 241, 245, 0.98) 0%, rgba(223, 227, 234, 0.96) 54%, rgba(210, 214, 222, 0.98) 100%)';
     }
@@ -227,19 +214,10 @@ export function buildPadBackground(
     if (mode === 'spectrum') {
         if (lockedSpectrumHue != null) {
             const lockedColor = buildLockedSpectrumColor(lockedSpectrumHue);
-            if (visualStyle === 'matrix') {
-                return 'transparent';
-            }
             return `radial-gradient(circle at 14% 18%, rgba(255, 255, 255, 0.26) 0%, rgba(255, 255, 255, 0.1) 14%, rgba(255, 255, 255, 0) 34%), linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.14) 62%, rgba(250, 251, 253, 0.84) 100%), linear-gradient(90deg, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0.94) 18%, ${lockedColor} 100%)`;
-        }
-        if (visualStyle === 'matrix') {
-            return 'transparent';
         }
         return 'radial-gradient(circle at 14% 18%, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.08) 14%, rgba(255, 255, 255, 0) 34%), linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.14) 62%, rgba(250, 251, 253, 0.84) 100%), linear-gradient(90deg, rgba(255, 96, 96, 1) 0%, rgba(255, 210, 94, 0.92) 18%, rgba(128, 232, 106, 0.92) 36%, rgba(72, 221, 244, 0.9) 54%, rgba(110, 115, 255, 0.9) 74%, rgba(255, 98, 198, 0.96) 100%)';
     }
 
-    if (visualStyle === 'matrix') {
-        return 'transparent';
-    }
     return 'radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.18) 15%, rgba(255, 255, 255, 0) 38%), linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.14) 62%, rgba(250, 251, 253, 0.84) 100%), linear-gradient(90deg, rgba(174, 231, 255, 0.96) 0%, rgba(255, 255, 255, 0.92) 30%, rgba(255, 181, 61, 1) 100%)';
 }

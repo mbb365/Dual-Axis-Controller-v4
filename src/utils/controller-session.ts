@@ -95,9 +95,10 @@ function isStoredControllerSession(value: unknown): value is StoredControllerSes
         (candidate.controlScope !== 'group' &&
             candidate.controlScope !== 'group-relative' &&
             candidate.controlScope !== 'individual') ||
-        (candidate.padVisualStyle !== 'plotter' &&
-            candidate.padVisualStyle !== 'matrix' &&
-            candidate.padVisualStyle !== 'pixel') ||
+        // 'matrix' was a style until v9; sessions saved with it load as Standard.
+        ((candidate.padVisualStyle as string) !== 'plotter' &&
+            (candidate.padVisualStyle as string) !== 'matrix' &&
+            (candidate.padVisualStyle as string) !== 'pixel') ||
         (candidate.uiMode !== 'temperature' && candidate.uiMode !== 'spectrum') ||
         typeof candidate.hasExplicitModeSelection !== 'boolean'
     ) {
@@ -139,6 +140,7 @@ function normalizeStoredGroupRelativeLayout(layout: StoredGroupRelativeLayout): 
 function normalizeStoredControllerSession(session: StoredControllerSession): StoredControllerSession {
     return {
         ...session,
+        padVisualStyle: session.padVisualStyle === 'pixel' ? 'pixel' : 'plotter',
         controlledLightEntityId: session.controlledLightEntityId ?? null,
         selectedColorHue: typeof session.selectedColorHue === 'number' ? session.selectedColorHue : null,
         lastLitGroupRelativeLayout: session.lastLitGroupRelativeLayout

@@ -1,0 +1,477 @@
+/* HomeCore look for the Dual Axis Controller (v9). Values come from the Figma "Dual Axis Controller" section on the
+   Spacing rules page: the light tile, the tile-size controller, and the controller with its settings panel. */
+
+.hc {
+    --hc-ground: #eeebe8;
+    --hc-card: #fbf9f6;
+    --hc-tile: #f3efea;
+    --hc-bright: #26221e;
+    --hc-text: #26221e;
+    --hc-muted: #6a625a;
+    --hc-on-bright: #fbf9f6;
+    --hc-line: rgba(38, 34, 30, 0.12);
+    --hc-segment-on: #fbf9f6;
+    --hc-light-on: #ffaa00;
+    --hc-font: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --hc-font-tile: Geist, var(--hc-font);
+    --hc-hair: inset 0 0 0 0.2px var(--hc-line), inset 0 -0.2px 0 var(--hc-line);
+    --hc-hair-all: inset 0 0 0 0.4px var(--hc-line);
+    color: var(--hc-text);
+    font-family: var(--hc-font);
+    -webkit-tap-highlight-color: transparent;
+}
+
+.hc--dark {
+    --hc-ground: #090909;
+    --hc-card: #222222;
+    --hc-tile: #2b2b2b;
+    --hc-bright: #f1f1f1;
+    --hc-text: #f1f1f1;
+    --hc-muted: #969696;
+    --hc-on-bright: #090909;
+    --hc-line: rgba(255, 255, 255, 0.14);
+    --hc-segment-on: #2b2b2b;
+}
+
+.hc,
+.hc *,
+.hc *::before,
+.hc *::after {
+    box-sizing: border-box;
+}
+
+.hc button {
+    margin: 0;
+    font: inherit;
+    color: inherit;
+}
+
+.hc button:focus-visible,
+.hc [role='slider']:focus-visible {
+    outline: 2px solid var(--hc-text);
+    outline-offset: 2px;
+}
+
+/* ---------- shared parts ---------- */
+
+/* the icon room: 40, corner 16. It is the on/off button. */
+.hcChip {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 0;
+    border-radius: 16px;
+    background: var(--hc-tile);
+    color: var(--hc-text);
+    cursor: pointer;
+    transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+.hcChip.is-on {
+    background: var(--hc-light-on);
+    color: #ffffff;
+}
+
+.hcChip:disabled {
+    cursor: default;
+    opacity: 0.5;
+}
+
+.hcGlyph {
+    display: block;
+    width: 34px;
+    height: 34px;
+    fill: currentColor;
+    --mdc-icon-size: 34px;
+}
+
+.hcLineIcon {
+    display: block;
+    width: 24px;
+    height: 24px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.hcFillIcon {
+    display: block;
+    width: 24px;
+    height: 24px;
+    fill: currentColor;
+}
+
+/* Tile/Title and Tile/Detail */
+.hcTitle {
+    display: block;
+    overflow: hidden;
+    font: 600 14px/20px var(--hc-font-tile);
+    letter-spacing: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.hcValue {
+    display: block;
+    overflow: hidden;
+    font: 400 16px/1.15 var(--hc-font);
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* the name and value: tapping them opens the controller */
+.hcName {
+    display: block;
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+}
+
+/* segmented control: 46 tall, segments 4 inside the track */
+.hcSeg {
+    display: flex;
+    gap: 4px;
+    height: 46px;
+    padding: 4px;
+    border-radius: 16px;
+    background: var(--hc-ground);
+}
+
+.hcSeg button {
+    flex: 1;
+    min-width: 0;
+    padding: 0 20px;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    font: 600 14px/1.25 var(--hc-font);
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    cursor: pointer;
+    transition: background-color 0.18s ease;
+}
+
+.hcSeg button[aria-pressed='true'] {
+    background: var(--hc-segment-on);
+}
+
+.hcSeg button:disabled {
+    cursor: default;
+    opacity: 0.4;
+}
+
+/* labels sit above what they name: Inter Medium 13, 10 in */
+.hcLabel {
+    margin: 0 0 4px;
+    padding-left: 10px;
+    color: var(--hc-muted);
+    font: 500 13px/18px var(--hc-font);
+}
+
+/* ---------- dashboard: light tile ---------- */
+
+.hcTile {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    width: 100%;
+    max-width: 280px;
+    padding: 20px;
+    border-radius: 28px;
+    background: var(--hc-card);
+    box-shadow: var(--hc-hair);
+}
+
+.hcTileHead {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.hcBar {
+    position: relative;
+    height: 46px;
+    overflow: hidden;
+    border-radius: 16px;
+    background: var(--hc-tile);
+    cursor: pointer;
+    touch-action: none;
+}
+
+.hcBar > i {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: linear-gradient(90deg, #ffc247, #ffaa00);
+}
+
+.hcBar::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: var(--hc-hair-all);
+    pointer-events: none;
+}
+
+/* ---------- dashboard: tile-size controller (the pad sits where the bar was: full width, 158 tall) ---------- */
+
+.hcTilePad {
+    flex: none;
+    width: 100%;
+}
+
+/* ---------- the controller ---------- */
+
+.hcBackdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.45);
+    transition: background-color 0.2s ease;
+}
+
+.hcPair {
+    position: relative;
+    display: flex;
+    align-items: stretch;
+    max-width: 100%;
+    max-height: calc(100vh - 32px);
+    max-height: calc(100dvh - 32px);
+}
+
+.hcCtl {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: 14px;
+    width: 440px;
+    max-width: 100%;
+    min-height: 0;
+    padding: 20px;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+    border-radius: 34px;
+    background: var(--hc-card);
+    box-shadow: var(--hc-hair-all);
+}
+
+/* nothing shrinks; when the screen is short the controller scrolls inside */
+.hcCtl > *,
+.hcSideInner > * {
+    flex: none;
+}
+
+.hcHead {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 12px;
+    min-height: 34px;
+}
+
+.hcHeadTitle {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    font: 500 18px/1.2 var(--hc-font-tile);
+    letter-spacing: -0.01em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.hcIconBtn {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--hc-text);
+    cursor: pointer;
+}
+
+.hcNow {
+    flex: none;
+}
+
+.hcNowValue {
+    font: 500 28px/1.15 var(--hc-font-tile);
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+}
+
+.hcNowSub {
+    margin-top: 3px;
+    overflow: hidden;
+    color: var(--hc-muted);
+    font: 500 13px/18px var(--hc-font);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.hcPad {
+    flex: none;
+    width: 100%;
+}
+
+/* the lights: Tile 60, corner 24, two to a row; one to a row when the inside is under 280 */
+.hcLights {
+    flex: none;
+    container-type: inline-size;
+}
+
+.hcLightTiles {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@container (max-width: 279px) {
+    .hcLightTiles {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.hcLight {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    min-height: 60px;
+    padding: 10px;
+    border-radius: 24px;
+    transition: background-color 0.15s ease;
+}
+
+.hcLight:hover {
+    background: var(--hc-tile);
+}
+
+.hcLight .hcGlyph {
+    width: 24px;
+    height: 24px;
+    --mdc-icon-size: 24px;
+}
+
+.hcLight.is-chosen {
+    background: var(--hc-bright);
+    color: var(--hc-on-bright);
+}
+
+.hcLight.is-muted {
+    opacity: 0.5;
+}
+
+/* ---------- settings: a 300 panel beside the controller ---------- */
+
+.hcSide {
+    flex: none;
+    width: 0;
+    overflow: hidden;
+    visibility: hidden;
+    transition: width 0.28s cubic-bezier(0.2, 0.7, 0.3, 1), visibility 0s linear 0.28s;
+}
+
+.hcPair.is-settings .hcSide {
+    width: 312px;
+    visibility: visible;
+    transition: width 0.28s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.hcSideInner {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    width: 300px;
+    height: 100%;
+    margin-left: 12px;
+    padding: 20px;
+    overflow: auto;
+    border-radius: 34px;
+    background: var(--hc-card);
+    box-shadow: var(--hc-hair-all);
+}
+
+/* narrow screens: the panel slides in over the controller */
+.hcPair.is-over .hcSide {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    width: auto;
+    opacity: 0;
+    transform: translateX(24px);
+    transition: transform 0.25s cubic-bezier(0.2, 0.7, 0.3, 1), opacity 0.2s ease, visibility 0s linear 0.25s;
+}
+
+.hcPair.is-over.is-settings .hcSide {
+    opacity: 1;
+    transform: none;
+    transition: transform 0.25s cubic-bezier(0.2, 0.7, 0.3, 1), opacity 0.2s ease;
+}
+
+.hcPair.is-over .hcSideInner {
+    width: 100%;
+    margin: 0;
+}
+
+/* ---------- phones: a sheet from the bottom, 85% tall, that scrolls inside ---------- */
+
+.hcBackdrop.is-sheet {
+    place-items: end stretch;
+    padding: 0;
+}
+
+.hcBackdrop.is-sheet .hcPair {
+    width: 100%;
+    max-height: 85vh;
+    max-height: 85dvh;
+}
+
+.hcBackdrop.is-sheet .hcCtl {
+    width: 100%;
+    border-radius: 34px 34px 0 0;
+    box-shadow: inset 0 0.4px 0 var(--hc-line), inset 0.4px 0 0 var(--hc-line), inset -0.4px 0 0 var(--hc-line);
+}
+
+.hcBackdrop.is-sheet .hcSideInner {
+    border-radius: 34px 34px 0 0;
+}
+
+.hcBackdrop.is-sheet .hcHead {
+    touch-action: none;
+}
+
+.hcBackdrop.is-sheet .hcHead button {
+    touch-action: manipulation;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .hcPair,
+    .hcSide,
+    .hcChip,
+    .hcSeg button {
+        transition: none !important;
+    }
+}

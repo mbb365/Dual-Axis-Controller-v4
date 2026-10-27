@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CompactCard, type CardLayout, type GroupedLightOption } from './components/CompactCard';
-import { PopupCardShell } from './components/card-popup/PopupCardShell';
+import type { CardLayout, DashboardTile, GroupedLightOption } from './components/CompactCard';
+import { buildIconBackground } from './components/compact-card/display-utils';
+import homeCoreStyles from './components/homecore/homecore.css?inline';
+import { ensureHomeCoreFonts } from './components/homecore/fonts';
+import { HomeCoreController } from './components/homecore/HomeCoreController';
+import { LightTile, PadTile } from './components/homecore/HomeCoreTiles';
 import type { HaloMarker, HaloVisualStyle } from './components/Halo';
 import {
     activateScene,
     callLightService,
     createSceneDefinition,
     deleteScene,
+    getEntityIcon,
     getLightState,
     isLightAvailable,
     isLightOn,
@@ -32,19 +37,14 @@ import {
     xFractionFromHueSat,
 } from './utils/control-state';
 import {
-    appendFavoritePreset,
     buildFavoriteSceneEntities,
     buildSharedFavoriteSceneEntityId,
-    buildBuiltinFavoritePresets,
-    createGroupFavoritePreset,
-    createOwnedIndividualFavoritePreset,
     favoriteSettingsMatch,
     loadFavoritePresets,
     loadSharedFavoritePresets,
     mergeFavoritePresetCollections,
     saveFavoritePresets,
     isSharedFavoriteSceneEntityId,
-    type FavoriteMemberPreset,
     type FavoritePreset,
     type FavoriteSettings,
 } from './utils/favorites';
@@ -65,6 +65,7 @@ export interface CardAppProps {
     entityId: string;
     name?: string;
     layout?: CardLayout | 'auto';
+    tile?: DashboardTile;
     onTapAction?: () => void;
     onHoldAction?: () => void;
     onDoubleTapAction?: () => void;
@@ -111,25 +112,6 @@ function buildGroupRelativeSnapshotFromMembers(
             sourceMembers.reduce((total, member) => total + member.brightness, 0) / sourceMembers.length,
         members,
     };
-}
-
-function favoritePresetsTargetMatch(left: FavoritePreset, right: FavoritePreset) {
-    if (left.scope !== right.scope || left.entityId !== right.entityId) {
-        return false;
-    }
-
-    if (left.scope === 'group' && right.scope === 'group') {
-        if (left.members.length !== right.members.length) {
-            return false;
-        }
-
-        return left.members.every((member, index) => {
-            const other = right.members[index];
-            return !!other && member.entityId === other.entityId && favoriteSettingsMatch(member.settings, other.settings);
-        });
-    }
-
-    return favoriteSettingsMatch(left.settings, right.settings);
 }
 
 function waitForMs(durationMs: number) {
@@ -271,6 +253,7 @@ export function CardApp({
     entityId,
     name,
     layout = 'auto',
+    tile = 'light',
     onTapAction,
     onHoldAction,
     onDoubleTapAction,
@@ -398,11 +381,9 @@ export function CardApp({
         handlePopupDragEnd,
         handlePopupDragMove,
         handlePopupDragStart,
-        handlePopupHandleClick,
         isMobilePopupViewport,
         isPopupClosing,
         isPopupDragging,
-        mobilePopupTopInset,
         popupDragOffset,
     } = usePopupSheet(showPopup, setShowPopup);
 
@@ -1348,18 +1329,6 @@ export function CardApp({
         })();
     }, [applyFavoriteDirectly, entityId, favoriteMatchesLiveState, resetQueuedControlState]);
 
-    const queueFavoriteSceneActivation = useCallback(
-        (favorite: FavoritePreset) => {
-            pendingFavoriteSceneApply.current = {
-                favorite,
-                token: lastRequestedFavoriteSceneToken.current + 1,
-            };
-            lastRequestedFavoriteSceneToken.current += 1;
-            processPendingFavoriteSceneActivation();
-        },
-        [processPendingFavoriteSceneActivation]
-    );
-
     const beginControlInteraction = useCallback(() => {
         isUserInteracting.current = true;
         if (interactionTimeout.current) {
@@ -1899,458 +1868,51 @@ export function CardApp({
         }
     }, [onTapAction, resolvedLayout]);
 
-    const buildFavoriteSettingsFromLight = useCallback(
-        (targetLight: ReturnType<typeof getLightState>) => buildFavoriteSettingsFromLightState(targetLight),
-        []
-    );
+    useEffect(() => {
+        ensureHomeCoreFonts();
+    }, []);
 
-    const currentFavoriteSettings: FavoriteSettings = useMemo(() => ({
-        brightness,
-        hue,
-        isOn,
-        kelvin,
-        mode: uiMode,
-        saturation,
-        selectedColorHue,
-    }), [brightness, hue, isOn, kelvin, uiMode, saturation, selectedColorHue]);
-    const builtinFavoritePresets = useMemo(
-        () => buildBuiltinFavoritePresets(new Date(), hass?.states?.['sun.sun']),
-        [hass?.states]
-    );
+    const tilePadMode: 'temperature' | 'spectrum' = tile === 'colour' ? 'spectrum' : 'temperature';
 
-    const activeFavoriteId =
-        favoritePresets.find((favorite) => {
-            if (favorite.scope === 'individual') {
-                const liveSettings = buildFavoriteSettingsFromLight(getLightState(hass, favorite.entityId));
-                return liveSettings ? favoriteSettingsMatch(favorite.settings, liveSettings) : false;
-            }
-
-            if (!favorite.members.length) {
-                return favoriteSettingsMatch(favorite.settings, currentFavoriteSettings);
-            }
-
-            return favorite.members.every((member) => {
-                const liveSettings = buildFavoriteSettingsFromLight(getLightState(hass, member.entityId));
-                return liveSettings ? favoriteSettingsMatch(member.settings, liveSettings) : false;
-            });
-        })?.id ??
-        builtinFavoritePresets.find((favorite) => favoriteSettingsMatch(favorite.settings, currentFavoriteSettings))?.id ??
-        null;
-
-    const handleBuiltinFavoriteApply = useCallback(
-        (favoriteId: string) => {
-            const favorite = builtinFavoritePresets.find((candidate) => candidate.id === favoriteId);
-            if (!favorite) return;
-
+    // The light tile's bar changes brightness only; the colour stays as it is.
+    const handleTileBrightnessChange = useCallback(
+        (nextBrightness: number) => {
             stopDiscoMode();
-            resetQueuedControlState();
-            clearInteractionLock();
-            groupRelativeInteractionSnapshot.current = null;
-            markInteraction(900);
-
-            const targetSettings = favorite.settings;
-            const targetBrightness = Math.max(0, targetSettings.brightness);
-            const targetX = xFractionFromHueSat(targetSettings.hue, targetSettings.saturation, targetSettings.mode);
-            hasExplicitModeSelection.current =
-                targetSettings.mode === 'spectrum' && targetSettings.selectedColorHue != null;
-
-            setIsOn(targetSettings.isOn);
-            lockUiModeSync(targetSettings.mode);
-            setUiMode(targetSettings.mode);
-            setSelectedColorHue(targetSettings.selectedColorHue);
-            setHue(targetSettings.hue);
-            setSaturation(targetSettings.saturation);
-            setBrightness(targetBrightness);
-            setKelvin(targetSettings.mode === 'temperature' ? targetSettings.kelvin : null);
-
-            if (effectiveControlScope === 'group-relative' && groupedLightIds.length) {
-                const snapshot =
-                    buildGroupRelativeSnapshot(
-                        hass,
-                        groupedLightIds,
-                        targetSettings.mode,
-                        targetSettings.mode === 'spectrum' ? targetSettings.selectedColorHue : null
-                    ) ?? ensureGroupRelativeLayout();
-
-                if (snapshot) {
-                    const deltaX = targetX - snapshot.averageX;
-                    const deltaBrightness = targetBrightness - snapshot.averageBrightness;
-                    const nextRelativeLayout = buildGroupRelativeSnapshotFromMembers(
-                        hass,
-                        targetSettings.mode,
-                        snapshot.members.map((member) => ({
-                            ...member,
-                            x: isControllableGroupRelativeMember(hass, member) ? member.x + deltaX : member.x,
-                            brightness: isControllableGroupRelativeMember(hass, member)
-                                ? member.brightness + deltaBrightness
-                                : member.brightness,
-                        }))
-                    );
-
-                    groupRelativeLayout.current = nextRelativeLayout;
-                    if (hasLitGroupRelativeMembers(nextRelativeLayout)) {
-                        rememberLastLitGroupRelativeLayout(nextRelativeLayout);
-                    }
-
-                    const relativeCommands = buildRelativeControlCommands(nextRelativeLayout.members, targetSettings.mode);
-
-                    queueControlCommand(relativeCommands);
-                    flushQueuedControlCommand(true);
-                    return;
-                }
-            }
-
-            const targetEntityId =
-                effectiveControlScope === 'individual' && controlledLightEntityId ? controlledLightEntityId : entityId;
-            const targetLight =
-                getLightState(hass, targetEntityId) ??
-                (effectiveControlScope === 'group' ? groupLight ?? light : light ?? groupLight);
-
-            if (!targetLight) return;
-
-            if (targetBrightness > 0) {
-                rememberLastLitControlSettings(targetEntityId, {
-                    ...targetSettings,
-                    brightness: targetBrightness,
-                    isOn: true,
-                });
-            }
-
-            const nextCommand = buildQueuedControlCommand(
-                targetEntityId,
-                effectiveControlScope === 'group' ? (groupLight ?? targetLight) : targetLight,
+            queueControlCommand([
                 {
-                    brightness: targetBrightness,
-                    hue: targetSettings.hue,
-                    saturation: targetSettings.saturation,
-                },
-                targetSettings.mode
-            );
-
-            queueControlCommand([nextCommand]);
-            flushQueuedControlCommand(true);
-        },
-        [
-            buildRelativeControlCommands,
-            builtinFavoritePresets,
-            clearInteractionLock,
-            controlledLightEntityId,
-            entityId,
-            ensureGroupRelativeLayout,
-            effectiveControlScope,
-            flushQueuedControlCommand,
-            groupLight,
-            groupedLightIds,
-            hass,
-            light,
-            lockUiModeSync,
-            markInteraction,
-            queueControlCommand,
-            resetQueuedControlState,
-            rememberLastLitControlSettings,
-            rememberLastLitGroupRelativeLayout,
-            stopDiscoMode,
-        ]
-    );
-
-    const handleFavoriteSave = useCallback(() => {
-        void (async () => {
-            let nextFavorite;
-
-            if (effectiveControlScope === 'individual' && controlledLightEntityId) {
-                const targetSettings = buildFavoriteSettingsFromLight(getLightState(hass, controlledLightEntityId));
-                if (!targetSettings) {
-                    return;
-                }
-
-                nextFavorite = createOwnedIndividualFavoritePreset(entityId, controlledLightEntityId, targetSettings);
-            } else {
-                const memberPresets: FavoriteMemberPreset[] = groupedLightIds
-                    .map((memberEntityId) => {
-                        const memberLight = getLightState(hass, memberEntityId);
-                        const memberSettings = buildFavoriteSettingsFromLight(memberLight);
-                        if (!memberLight || !memberSettings) return null;
-
-                        const memberPreset: FavoriteMemberPreset = {
-                            entityId: memberEntityId,
-                            settings: memberSettings,
-                        };
-
-                        if (memberLight.attributes.friendly_name) {
-                            memberPreset.name = memberLight.attributes.friendly_name;
-                        }
-
-                        return memberPreset;
-                    })
-                    .filter((member): member is FavoriteMemberPreset => member !== null);
-
-                if (memberPresets.length) {
-                    nextFavorite = createGroupFavoritePreset(entityId, currentFavoriteSettings, memberPresets);
-                } else {
-                    const targetSettings = buildFavoriteSettingsFromLight(groupLight ?? light);
-                    if (!targetSettings) {
-                        return;
-                    }
-
-                    nextFavorite = createOwnedIndividualFavoritePreset(entityId, entityId, targetSettings);
-                }
-            }
-
-            const nextFavorites = appendFavoritePreset(favoritePresets, nextFavorite);
-            const removedFavorites = favoritePresets.filter(
-                (favorite) => !nextFavorites.some((candidate) => candidate.id === favorite.id)
-            );
-
-            try {
-                await createSceneDefinition(hass, nextFavorite.sceneEntityId, buildFavoriteSceneEntities(nextFavorite));
-                const deletionResults = await Promise.allSettled(
-                    removedFavorites.map((favorite) => deleteScene(hass, favorite.sceneEntityId))
-                );
-                deletionResults.forEach((result, index) => {
-                    if (result.status === 'rejected') {
-                        const favorite = removedFavorites[index];
-                        console.warn('[Dual Halo Controller] Failed to delete replaced favourite scene', {
-                            entityId,
-                            sceneEntityId: favorite?.sceneEntityId,
-                            favoriteId: favorite?.id,
-                            error: result.reason,
-                        });
-                    }
-                });
-                setFavoritePresets(nextFavorites);
-                saveFavoritePresets(entityId, nextFavorites);
-            } catch (error) {
-                console.error('[Dual Halo Controller] Failed to save favourite in Home Assistant', {
                     entityId,
-                    nextFavorite,
-                    error,
-                });
-            }
-        })();
-    }, [
-        buildFavoriteSettingsFromLight,
-        controlledLightEntityId,
-        currentFavoriteSettings,
-        entityId,
-        effectiveControlScope,
-        favoritePresets,
-        groupLight,
-        groupedLightIds,
-        hass,
-        light,
-    ]);
-
-    const handleFavoriteDelete = useCallback(
-        (favoriteId: string) => {
-            // Remove from UI state immediately to prevent race conditions
-            const favoriteToDelete = favoritePresets.find((favorite) => favorite.id === favoriteId);
-            if (!favoriteToDelete) return;
-
-            const nextFavorites = favoritePresets.filter((favorite) => favorite.id !== favoriteId);
-            
-            // Update UI immediately
-            setFavoritePresets(nextFavorites);
-            saveFavoritePresets(entityId, nextFavorites);
-            
-            // Delete the scene in background without blocking
-            void (async () => {
-                try {
-                    await deleteScene(hass, favoriteToDelete.sceneEntityId);
-                } catch (error) {
-                    console.error('[Dual Halo Controller] Failed to delete favourite scene', {
-                        entityId,
-                        favoriteId,
-                        sceneEntityId: favoriteToDelete.sceneEntityId,
-                        error,
-                    });
-                }
-            })();
+                    turnOn: nextBrightness > 0,
+                    brightness: nextBrightness,
+                    hue: 0,
+                    saturation: 0,
+                    uiMode: 'temperature',
+                },
+            ]);
         },
-        [entityId, favoritePresets, hass]
+        [entityId, queueControlCommand, stopDiscoMode]
     );
 
-    const handleFavoriteEditCommit = useCallback(
-        (favoriteIdsToDelete: string[], shouldSaveCurrent: boolean) => {
-            void (async () => {
-                const deletions = new Set(favoriteIdsToDelete);
-                let nextFavorites = favoritePresets.filter((favorite) => !deletions.has(favorite.id));
-                const deletedFavorites = favoritePresets.filter((favorite) => deletions.has(favorite.id));
-                let nextFavorite: FavoritePreset | null = null;
-
-                if (shouldSaveCurrent) {
-                    if (effectiveControlScope === 'individual' && controlledLightEntityId) {
-                        const targetSettings = buildFavoriteSettingsFromLight(getLightState(hass, controlledLightEntityId));
-                        if (targetSettings) {
-                            nextFavorite = createOwnedIndividualFavoritePreset(
-                                entityId,
-                                controlledLightEntityId,
-                                targetSettings
-                            );
-                        }
-                    } else {
-                        const memberPresets: FavoriteMemberPreset[] = groupedLightIds
-                            .map((memberEntityId) => {
-                                const memberLight = getLightState(hass, memberEntityId);
-                                const memberSettings = buildFavoriteSettingsFromLight(memberLight);
-                                if (!memberLight || !memberSettings) return null;
-
-                                const memberPreset: FavoriteMemberPreset = {
-                                    entityId: memberEntityId,
-                                    settings: memberSettings,
-                                };
-
-                                if (memberLight.attributes.friendly_name) {
-                                    memberPreset.name = memberLight.attributes.friendly_name;
-                                }
-
-                                return memberPreset;
-                            })
-                            .filter((member): member is FavoriteMemberPreset => member !== null);
-
-                        if (memberPresets.length) {
-                            nextFavorite = createGroupFavoritePreset(entityId, currentFavoriteSettings, memberPresets);
-                        } else {
-                            const targetSettings = buildFavoriteSettingsFromLight(groupLight ?? light);
-                            if (targetSettings) {
-                                nextFavorite = createOwnedIndividualFavoritePreset(entityId, entityId, targetSettings);
-                            }
-                        }
-                    }
-
-                    if (nextFavorite) {
-                        const matchesDeletedFavorite = deletedFavorites.some((favorite) =>
-                            favoritePresetsTargetMatch(favorite, nextFavorite as FavoritePreset)
-                        );
-                        const matchesRemainingFavorite = nextFavorites.some((favorite) =>
-                            favoritePresetsTargetMatch(favorite, nextFavorite as FavoritePreset)
-                        );
-
-                        if (matchesDeletedFavorite || matchesRemainingFavorite) {
-                            nextFavorite = null;
-                        } else {
-                            nextFavorites = appendFavoritePreset(nextFavorites, nextFavorite);
-                        }
-                    }
-                }
-
-                const removedFavorites = favoritePresets.filter(
-                    (favorite) => !nextFavorites.some((candidate) => candidate.id === favorite.id)
-                );
-
-                try {
-                    if (nextFavorite) {
-                        await createSceneDefinition(
-                            hass,
-                            nextFavorite.sceneEntityId,
-                            buildFavoriteSceneEntities(nextFavorite)
-                        );
-                    }
-                    const deletionResults = await Promise.allSettled(
-                        removedFavorites.map((favorite) => deleteScene(hass, favorite.sceneEntityId))
-                    );
-                    deletionResults.forEach((result, index) => {
-                        if (result.status === 'rejected') {
-                            const favorite = removedFavorites[index];
-                            console.warn('[Dual Halo Controller] Failed to delete edited favourite scene', {
-                                entityId,
-                                sceneEntityId: favorite?.sceneEntityId,
-                                favoriteId: favorite?.id,
-                                error: result.reason,
-                            });
-                        }
-                    });
-                    setFavoritePresets(nextFavorites);
-                    saveFavoritePresets(entityId, nextFavorites);
-                } catch (error) {
-                    console.error('[Dual Halo Controller] Failed to commit favourite edits', {
-                        entityId,
-                        favoriteIdsToDelete,
-                        shouldSaveCurrent,
-                        deletedFavorites,
-                        nextFavorite,
-                        error,
-                    });
-                }
-            })();
-        },
-        [
-            buildFavoriteSettingsFromLight,
-            controlledLightEntityId,
-            currentFavoriteSettings,
-            entityId,
-            effectiveControlScope,
-            favoritePresets,
-            groupLight,
-            groupedLightIds,
-            hass,
-            light,
-        ]
-    );
-
-    const handleFavoriteApply = useCallback(
-        (favoriteId: string) => {
-            const favorite = favoritePresets.find((candidate) => candidate.id === favoriteId);
-            if (!favorite) return;
-
+    // The tile-size controller always moves every light together, in the pad the card is set to.
+    const handleTilePadChange = useCallback(
+        (nextHue: number, nextSaturation: number, nextBrightness: number) => {
             stopDiscoMode();
-            resetQueuedControlState();
-            clearInteractionLock();
-            hasExplicitModeSelection.current =
-                favorite.settings.mode === 'spectrum' && favorite.settings.selectedColorHue != null;
-            groupRelativeInteractionSnapshot.current = null;
-            groupRelativeLayout.current = null;
-
-            lockUiModeSync(favorite.settings.mode);
-            setUiMode(favorite.settings.mode);
-            setSelectedColorHue(favorite.settings.selectedColorHue);
-            setIsOn(favorite.settings.isOn);
-            setHue(favorite.settings.hue);
-            setSaturation(favorite.settings.saturation);
-            setBrightness(favorite.settings.brightness);
-            setKelvin(favorite.settings.mode === 'temperature' ? favorite.settings.kelvin : null);
-            markInteraction(900);
-            if (favorite.scope === 'group') {
-                activeEntityIdRef.current = entityId;
-                setControlScope('group');
-                controlledLightEntityIdRef.current = null;
-                setControlledLightEntityId(null);
-
-                if (favorite.settings.isOn && favorite.settings.brightness > 0) {
-                    rememberLastLitControlSettings(entityId, {
-                        ...favorite.settings,
-                        brightness: Math.max(1, favorite.settings.brightness),
-                        isOn: true,
-                    });
-                }
-            } else {
-                activeEntityIdRef.current = favorite.entityId;
-                setControlScope('individual');
-                controlledLightEntityIdRef.current = favorite.entityId;
-                setControlledLightEntityId(favorite.entityId);
-
-                if (favorite.settings.isOn && favorite.settings.brightness > 0) {
-                    rememberLastLitControlSettings(favorite.entityId, {
-                        ...favorite.settings,
-                        brightness: Math.max(1, favorite.settings.brightness),
-                        isOn: true,
-                    });
-                }
-            }
-
-            queueFavoriteSceneActivation(favorite);
+            const targetLight = getLightState(hassRef.current, entityId) ?? groupLight;
+            if (!targetLight) return;
+            queueControlCommand([
+                buildQueuedControlCommand(
+                    entityId,
+                    targetLight,
+                    { hue: nextHue, saturation: nextSaturation, brightness: nextBrightness },
+                    tilePadMode
+                ),
+            ]);
         },
-        [
-            clearInteractionLock,
-            entityId,
-            favoritePresets,
-            lockUiModeSync,
-            markInteraction,
-            queueFavoriteSceneActivation,
-            resetQueuedControlState,
-            rememberLastLitControlSettings,
-            stopDiscoMode,
-        ]
+        [entityId, groupLight, queueControlCommand, stopDiscoMode, tilePadMode]
     );
+
+    const handleTileControlEnd = useCallback(() => {
+        flushQueuedControlCommand(true);
+    }, [flushQueuedControlCommand]);
 
     const handleGroupedLightSelect = useCallback((nextEntityId: string) => {
         const targetLight = getLightState(hass, nextEntityId);
@@ -2372,6 +1934,15 @@ export function CardApp({
         controlledLightEntityIdRef.current = nextEntityId;
         setControlledLightEntityId(nextEntityId);
     }, [controlScope, hass, stopDiscoMode]);
+
+    // Lets go of the chosen light without sending anything; the lights stay where they are.
+    const handleGroupedLightRelease = useCallback(() => {
+        stopDiscoMode();
+        activeEntityIdRef.current = entityId;
+        controlledLightEntityIdRef.current = null;
+        setControlledLightEntityId(null);
+        setControlScope((current) => (current === 'individual' ? 'group' : current));
+    }, [entityId, stopDiscoMode]);
 
     const handleGroupRelativeFormationSelect = useCallback(() => {
         stopDiscoMode();
@@ -2534,7 +2105,6 @@ export function CardApp({
         compactUiMode,
         compactBrightness,
         compactHue,
-        compactSaturation,
         compactKelvin,
         compactIsOn,
         expandedPrimaryName,
@@ -2551,121 +2121,131 @@ export function CardApp({
         controlScope: effectiveControlScope,
         controlledLightEntityId,
     });
-    const expandedCardProps = {
-        isDarkMode,
-        lightName,
-        expandedPrimaryName,
-        expandedSecondaryName,
-        isOn,
-        hue,
-        saturation,
-        brightness,
-        kelvin,
-        uiMode,
-        canUseTemperature: supportsTemperature,
-        canUseSpectrum: supportsSpectrum,
-        onModeChange: handleModeChange,
-        onControlsChange: handleControlsChange,
-        selectedColorHue,
-        padVisualStyle,
-        onPadVisualStyleChange: setPadVisualStyle,
-        onControlInteractionStart: beginControlInteraction,
-        onControlInteractionEnd: handleControlInteractionEnd,
-        isDiscoMode,
-        discoSpeedMs,
-        onDiscoSpeedChange: setDiscoSpeedMs,
-        onDiscoModeTrigger: startDiscoMode,
-        onDiscoModeExit: stopDiscoMode,
-        favoritePresets,
-        builtinFavoritePresets,
-        activeFavoriteId,
-        onFavoriteSave: handleFavoriteSave,
-        onFavoriteDelete: handleFavoriteDelete,
-        onBuiltinFavoriteApply: handleBuiltinFavoriteApply,
-        onFavoriteEditCommit: handleFavoriteEditCommit,
-        onFavoriteApply: handleFavoriteApply,
-        onPadMarkerSelect: groupedLights.length ? handleGroupedLightSelect : undefined,
-        onFormationIndicatorSelect: handleGroupRelativeFormationSelect,
-        onPadDoubleSelect: handlePadDoubleSelect,
-        onToggle: handleToggle,
-        groupedLights,
-        groupedLightMarkers,
-        groupRelativeFormationIndicator,
-        controlScope: effectiveControlScope,
-        controlledLightEntityId,
-        onControlScopeChange: handleControlScopeChange,
-        onGroupedLightSelect: handleGroupedLightSelect,
-        onGroupedLightToggle: handleGroupedLightToggle,
-    } as const;
+    const tilePadState = buildGroupedAggregateControlState(hass, groupedLightIds, tilePadMode, groupLight);
+    const tileIcon = getEntityIcon(hass, entityId, groupedLightIds.length ? 'mdi:lightbulb-group' : 'mdi:lightbulb');
+    const formatReading = (
+        readingIsOn: boolean,
+        readingBrightness: number,
+        readingMode: 'temperature' | 'spectrum',
+        readingKelvin: number | null,
+        readingHue: number
+    ) => {
+        if (!readingIsOn) return 'Off';
+        const reading =
+            readingMode === 'temperature'
+                ? readingKelvin
+                    ? `${readingKelvin.toLocaleString()}K`
+                    : null
+                : `${Math.round(readingHue)}° hue`;
+        return [`${Math.round(readingBrightness)}%`, reading].filter(Boolean).join(' · ');
+    };
+    const getGroupedLightChipStyle = (groupedLight: GroupedLightOption) => ({
+        background: buildIconBackground(
+            groupedLight.isOn,
+            groupedLight.previewHue,
+            groupedLight.previewSaturation,
+            groupedLight.previewBrightness,
+            groupedLight.previewMode
+        ),
+        color: '#ffffff',
+    });
 
     return (
         <div>
-            <CompactCard
-                layout={resolvedLayout}
-                isDarkMode={isDarkMode}
-                lightName={resolvedLayout === 'compact' ? compactLightName : lightName}
-                expandedPrimaryName={resolvedLayout === 'compact' ? undefined : expandedPrimaryName}
-                expandedSecondaryName={resolvedLayout === 'compact' ? null : expandedSecondaryName}
-                isOn={resolvedLayout === 'compact' ? compactIsOn : isOn}
-                hue={resolvedLayout === 'compact' ? compactHue : hue}
-                saturation={resolvedLayout === 'compact' ? compactSaturation : saturation}
-                brightness={resolvedLayout === 'compact' ? compactBrightness : brightness}
-                kelvin={resolvedLayout === 'compact' ? compactKelvin : kelvin}
-                uiMode={resolvedLayout === 'compact' ? compactUiMode : uiMode}
-                canUseTemperature={supportsTemperature}
-                canUseSpectrum={supportsSpectrum}
-                onModeChange={handleModeChange}
-                onControlsChange={handleControlsChange}
-                selectedColorHue={selectedColorHue}
-                padVisualStyle={padVisualStyle}
-                onPadVisualStyleChange={setPadVisualStyle}
-                onControlInteractionStart={beginControlInteraction}
-                onControlInteractionEnd={handleControlInteractionEnd}
-                isDiscoMode={isDiscoMode}
-                discoSpeedMs={discoSpeedMs}
-                onDiscoSpeedChange={setDiscoSpeedMs}
-                onDiscoModeTrigger={startDiscoMode}
-                onDiscoModeExit={stopDiscoMode}
-                onPadMarkerSelect={groupedLights.length ? handleGroupedLightSelect : undefined}
-                onFormationIndicatorSelect={handleGroupRelativeFormationSelect}
-                onPadDoubleSelect={handlePadDoubleSelect}
-                onToggle={resolvedLayout === 'compact' ? handleCompactToggle : handleToggle}
-                favoritePresets={favoritePresets}
-                builtinFavoritePresets={builtinFavoritePresets}
-                activeFavoriteId={activeFavoriteId}
-                onFavoriteSave={handleFavoriteSave}
-                onBuiltinFavoriteApply={handleBuiltinFavoriteApply}
-                onFavoriteDelete={handleFavoriteDelete}
-                onFavoriteEditCommit={handleFavoriteEditCommit}
-                onFavoriteApply={handleFavoriteApply}
-                groupedLights={groupedLights}
-                groupedLightMarkers={groupedLightMarkers}
-                groupRelativeFormationIndicator={groupRelativeFormationIndicator}
-                controlScope={effectiveControlScope}
-                controlledLightEntityId={controlledLightEntityId}
-                onControlScopeChange={handleControlScopeChange}
-                onGroupedLightSelect={handleGroupedLightSelect}
-                onGroupedLightToggle={handleGroupedLightToggle}
-                onTapAction={handleTap}
-                onHoldAction={onHoldAction}
-                onDoubleTapAction={onDoubleTapAction}
-            />
+            <style>{homeCoreStyles}</style>
+            {tile === 'light' ? (
+                <LightTile
+                    isDarkMode={isDarkMode}
+                    name={compactLightName}
+                    icon={tileIcon}
+                    isOn={compactIsOn}
+                    valueText={formatReading(compactIsOn, compactBrightness, compactUiMode, compactKelvin, compactHue)}
+                    brightness={compactBrightness}
+                    onToggle={handleCompactToggle}
+                    onOpen={handleTap}
+                    onHold={onHoldAction}
+                    onDoubleTap={onDoubleTapAction}
+                    onBrightnessChange={handleTileBrightnessChange}
+                    onBrightnessCommit={handleTileControlEnd}
+                />
+            ) : (
+                <PadTile
+                    isDarkMode={isDarkMode}
+                    name={compactLightName}
+                    icon={tileIcon}
+                    isOn={tilePadState.isOn}
+                    valueText={formatReading(
+                        tilePadState.isOn,
+                        tilePadState.brightness,
+                        tilePadMode,
+                        tilePadState.kelvin,
+                        tilePadState.hue
+                    )}
+                    mode={tilePadMode}
+                    hue={tilePadState.hue}
+                    saturation={tilePadState.saturation}
+                    brightness={tilePadState.brightness}
+                    onToggle={handleCompactToggle}
+                    onOpen={handleTap}
+                    onHold={onHoldAction}
+                    onDoubleTap={onDoubleTapAction}
+                    onPadChange={handleTilePadChange}
+                    onPadStart={stopDiscoMode}
+                    onPadEnd={handleTileControlEnd}
+                />
+            )}
 
-            {resolvedLayout === 'compact' && showPopup ? (
-                <PopupCardShell
-                    isMobilePopupViewport={isMobilePopupViewport}
-                    mobilePopupTopInset={mobilePopupTopInset}
-                    popupDragOffset={popupDragOffset}
-                    isPopupDragging={isPopupDragging}
-                    isPopupClosing={isPopupClosing}
+            {showPopup ? (
+                <HomeCoreController
+                    isDarkMode={isDarkMode}
+                    title={expandedPrimaryName}
+                    icon={tileIcon}
+                    chosenLightName={expandedSecondaryName}
+                    isOn={isOn}
+                    brightness={brightness}
+                    hue={hue}
+                    saturation={saturation}
+                    kelvin={kelvin}
+                    uiMode={uiMode}
+                    canUseTemperature={supportsTemperature}
+                    canUseSpectrum={supportsSpectrum}
+                    selectedColorHue={selectedColorHue}
+                    onModeChange={handleModeChange}
+                    onControlsChange={handleControlsChange}
+                    onControlInteractionStart={beginControlInteraction}
+                    onControlInteractionEnd={handleControlInteractionEnd}
+                    padVisualStyle={padVisualStyle}
+                    onPadVisualStyleChange={setPadVisualStyle}
+                    isDiscoMode={isDiscoMode}
+                    discoSpeedMs={discoSpeedMs}
+                    onDiscoSpeedChange={setDiscoSpeedMs}
+                    onDiscoModeTrigger={startDiscoMode}
+                    onDiscoModeExit={stopDiscoMode}
+                    onPadMarkerSelect={groupedLights.length ? handleGroupedLightSelect : undefined}
+                    onFormationIndicatorSelect={handleGroupRelativeFormationSelect}
+                    onPadDoubleSelect={handlePadDoubleSelect}
+                    onToggle={handleToggle}
+                    groupedLights={groupedLights}
+                    groupedLightMarkers={groupedLightMarkers}
+                    groupRelativeFormationIndicator={groupRelativeFormationIndicator}
+                    controlScope={effectiveControlScope}
+                    controlledLightEntityId={controlledLightEntityId}
+                    onControlScopeChange={handleControlScopeChange}
+                    onGroupedLightSelect={handleGroupedLightSelect}
+                    onGroupedLightRelease={handleGroupedLightRelease}
+                    onGroupedLightToggle={handleGroupedLightToggle}
+                    getGroupedLightChipStyle={getGroupedLightChipStyle}
                     onClose={closePopup}
-                    onDragStart={handlePopupDragStart}
-                    onDragMove={handlePopupDragMove}
-                    onDragEnd={handlePopupDragEnd}
-                    onHandleClick={handlePopupHandleClick}
-                >
-                    <CompactCard layout="expanded" {...expandedCardProps} />
-                </PopupCardShell>
+                    sheet={{
+                        isSheet: isMobilePopupViewport,
+                        dragOffset: popupDragOffset,
+                        isDragging: isPopupDragging,
+                        isClosing: isPopupClosing,
+                        onDragStart: handlePopupDragStart,
+                        onDragMove: handlePopupDragMove,
+                        onDragEnd: handlePopupDragEnd,
+                    }}
+                />
             ) : null}
         </div>
     );
