@@ -5,7 +5,8 @@ import homeCoreStyles from './components/homecore/homecore.css?inline';
 import { ensureHomeCoreFonts } from './components/homecore/fonts';
 import { HomeCoreController } from './components/homecore/HomeCoreController';
 import { DacLightTile } from './components/homecore/HomeCoreTiles';
-import type { HaloMarker, HaloVisualStyle } from './components/Halo';
+import type { HaloIndicatorSelection, HaloMarker, HaloVisualStyle } from './components/Halo';
+import type { LightState } from './services/ha-connection';
 import {
     activateScene,
     callLightService,
@@ -1846,8 +1847,9 @@ export function CardApp({
             setControlledLightEntityId(null);
         }
 
-        // Try to restore if turning on, but always call the service
-        const shouldTryRestore = nextState && (compactRestoreScope === 'individual' || isGroupedCompactCard);
+        // Try to restore if turning on, but always call the service. A single light too, so it comes back where its
+        // pad shows it greyed rather than wherever the light itself starts (some start at 100%).
+        const shouldTryRestore = nextState;
         if (shouldTryRestore && restoreRememberedControllerState(compactRestoreScope, compactRestoreEntityId)) {
             // State was restored, don't override it
         } else {
@@ -2168,6 +2170,27 @@ export function CardApp({
                       : liveTilePadState.kelvin,
           }
         : liveTilePadState;
+    // Where the light was when it was last on (this card's memory of it), in a pad's own mode: the pad shows it greyed
+    // while the light is off, and a tap brings it back there (Matt, 2026-10-28).
+    const restSelectionFor = (padMode: 'temperature' | 'spectrum'): HaloIndicatorSelection | null => {
+        const remembered = lastLitControlSettings.current[currentControlRestoreKey];
+        const base = getLightState(hass, currentControlRestoreKey) ?? light ?? groupLight;
+        if (!remembered || !base || remembered.brightness <= 0) return null;
+        const asTemperature = remembered.mode === 'temperature' && remembered.kelvin != null;
+        const lit = {
+            ...base,
+            state: 'on',
+            attributes: {
+                ...base.attributes,
+                brightness: Math.round((remembered.brightness / 100) * 255),
+                color_mode: asTemperature ? 'color_temp' : 'hs',
+                color_temp_kelvin: asTemperature ? remembered.kelvin : undefined,
+                color_temp: undefined,
+                hs_color: asTemperature ? undefined : [remembered.hue, remembered.saturation],
+            },
+        } as LightState;
+        return getMarkerControlValues(lit, padMode);
+    };
     const tileIcon = getEntityIcon(hass, entityId, groupedLightIds.length ? 'mdi:lightbulb-group' : 'mdi:lightbulb');
     const formatReading = (
         readingIsOn: boolean,
@@ -2215,6 +2238,7 @@ export function CardApp({
                 hue={tilePadState.hue}
                 saturation={tilePadState.saturation}
                 brightness={tilePadState.brightness}
+                restSelection={tilePadState.isOn ? null : restSelectionFor(tilePadMode)}
                 onToggle={handleCompactToggle}
                 onOpen={handleTap}
                 onHold={onHoldAction}
@@ -2257,6 +2281,7 @@ export function CardApp({
                     groupedLights={groupedLights}
                     groupedLightMarkers={groupedLightMarkers}
                     groupRelativeFormationIndicator={groupRelativeFormationIndicator}
+                    restSelection={isOn ? null : restSelectionFor(uiMode)}
                     controlScope={effectiveControlScope}
                     controlledLightEntityId={controlledLightEntityId}
                     onControlScopeChange={handleControlScopeChange}

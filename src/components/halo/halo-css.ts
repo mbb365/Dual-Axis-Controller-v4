@@ -278,6 +278,13 @@ export const HALO_CSS = `
         box-shadow 220ms ease;
 }
 
+/* while the light is off: the same picker, greyed, where it was last on (Matt, 2026-10-28) */
+.halo__indicator.is-rest {
+    background: rgba(128, 128, 128, 0.6);
+    border-color: rgba(255, 255, 255, 0.85);
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12);
+}
+
 .halo__indicator.is-group-relative,
 .halo__indicator-ghost.is-group-relative {
     width: 22px;

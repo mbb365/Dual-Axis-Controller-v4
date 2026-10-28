@@ -45,6 +45,8 @@ interface HaloProps {
     visualStyle?: HaloVisualStyle;
     indicatorVariant?: 'default' | 'group-relative';
     formationIndicator?: HaloIndicatorSelection | null;
+    // where the light was when it was last on: shown greyed while it's off, where a tap brings it back
+    restSelection?: HaloIndicatorSelection | null;
     size?: 'full' | 'tile';
 }
 
@@ -142,6 +144,7 @@ export function Halo({
     visualStyle = 'plotter',
     indicatorVariant = 'default',
     formationIndicator = null,
+    restSelection = null,
     size = 'full',
 }: HaloProps) {
     const buildSelection = useCallback((
@@ -1081,6 +1084,16 @@ export function Halo({
                                 visualStyle
                             )}%`,
                             top: `${yPosFromBrightness(formationIndicator.brightness, visualStyle)}%`,
+                        }}
+                    />
+                ) : null}
+                {!isOn && restSelection && !isDiscoMode && !isBrickStyle ? (
+                    <div
+                        className="halo__indicator is-rest"
+                        aria-hidden="true"
+                        style={{
+                            left: `${xPosFromHueSat(restSelection.hue, restSelection.saturation, mode, lockedSpectrumHue, visualStyle)}%`,
+                            top: `${yPosFromBrightness(restSelection.brightness, visualStyle)}%`,
                         }}
                     />
                 ) : null}

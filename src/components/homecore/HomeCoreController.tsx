@@ -53,6 +53,8 @@ export interface HomeCoreControllerProps {
     groupedLights: GroupedLightOption[];
     groupedLightMarkers: HaloMarker[];
     groupRelativeFormationIndicator?: HaloIndicatorSelection | null;
+    // where the light was last on, shown greyed on the pad while it's off
+    restSelection?: HaloIndicatorSelection | null;
     controlScope: 'group' | 'group-relative' | 'individual';
     controlledLightEntityId?: string | null;
     onControlScopeChange?: (scope: 'group' | 'group-relative') => void;
@@ -141,6 +143,7 @@ export function HomeCoreController({
     groupedLights,
     groupedLightMarkers,
     groupRelativeFormationIndicator,
+    restSelection = null,
     controlScope,
     controlledLightEntityId,
     onControlScopeChange,
@@ -293,6 +296,7 @@ export function HomeCoreController({
                             onToggle={onToggle}
                             mode={uiMode}
                             formationIndicator={groupRelativeFormationIndicator}
+                            restSelection={restSelection}
                             indicatorVariant={
                                 controlScope === 'group-relative' && !controlledLightEntityId ? 'group-relative' : 'default'
                             }

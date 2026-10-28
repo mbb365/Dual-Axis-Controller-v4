@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Halo } from '../Halo';
+import { Halo, type HaloIndicatorSelection } from '../Halo';
 import { HcGlyph } from './icons';
 
 const HOLD_MS = 500;
@@ -109,6 +109,8 @@ interface DacLightTileProps extends TileHeadProps {
     hue: number;
     saturation: number;
     brightness: number;
+    // where the light was last on, shown greyed on the pad while it's off
+    restSelection?: HaloIndicatorSelection | null;
     onPadChange: (hue: number, saturation: number, brightness: number) => void;
     onPadStart: () => void;
     onPadEnd: () => void;
@@ -125,6 +127,7 @@ export function DacLightTile({
     hue,
     saturation,
     brightness,
+    restSelection = null,
     onToggle,
     onOpen,
     onHold,
@@ -146,6 +149,7 @@ export function DacLightTile({
                     saturation={saturation}
                     brightness={brightness}
                     isOn={isOn}
+                    restSelection={restSelection}
                     mode={mode}
                     visualStyle="plotter"
                     onChange={onPadChange}
