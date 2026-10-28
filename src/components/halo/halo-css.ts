@@ -27,7 +27,11 @@ export const HALO_CSS = `
     overflow: hidden;
     background-color: rgba(245, 247, 250, 0.96);
     cursor: crosshair;
-    touch-action: none;
+    /* a swipe over the pad scrolls the page; a finger takes the pad only once held (Halo.tsx, TOUCH_HOLD_MS) */
+    touch-action: pan-y;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
     border: 0;
     box-shadow: none;
     transition:

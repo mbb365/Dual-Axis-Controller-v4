@@ -83,6 +83,10 @@ const SAFE_CONTROL_UPDATE_INTERVAL_MS = 120;
 const DISCO_OVERSPEED_THRESHOLD = 140;
 const DISCO_OVERSPEED_STREAK_MS = 650;
 const MARKER_DRAG_THRESHOLD_PX = 12;
+// A finger works the pad only after resting this long, so a swipe across it scrolls the page and a quick touch changes
+// nothing; moving further than TOUCH_SLOP_PX before then is a swipe.
+const TOUCH_HOLD_MS = 350;
+const TOUCH_SLOP_PX = 8;
 const DISCO_SPEED_OPTIONS: Array<{ label: string; speedMs: 900 | 1200 | 1500 }> = [
     { label: 'Disco', speedMs: 900 },
     { label: 'Aurora', speedMs: 1200 },
@@ -100,6 +104,19 @@ interface PendingMarkerDrag {
     sourceMarkerId: string | null;
     startClientX: number;
     startClientY: number;
+}
+
+// A finger on the pad before it counts: on a light that's off ('off', a tap turns it on), on the pad ('pad') or on a
+// handle ('marker'). It's armed once held for TOUCH_HOLD_MS without moving.
+interface TouchGate {
+    pointerId: number;
+    kind: 'off' | 'pad' | 'marker';
+    startX: number;
+    startY: number;
+    lastX: number;
+    lastY: number;
+    timer: number | null;
+    armed: boolean;
 }
 
 export function Halo({
@@ -162,6 +179,21 @@ export function Halo({
     const handoffTimeoutRef = useRef<number | null>(null);
     const previousActiveMarkerIdRef = useRef<string | null>(null);
     const pendingMarkerDragRef = useRef<PendingMarkerDrag | null>(null);
+    const touchGateRef = useRef<TouchGate | null>(null);
+
+    // Once a finger holds the pad it moves the pad, not the page (React's touch listeners can't stop scrolling).
+    useEffect(() => {
+        const pad = trackpadRef.current;
+        const hold = (event: TouchEvent) => {
+            if (touchGateRef.current?.armed && event.cancelable) event.preventDefault();
+        };
+        pad?.addEventListener('touchmove', hold, { passive: false });
+        return () => {
+            pad?.removeEventListener('touchmove', hold);
+            const timer = touchGateRef.current?.timer;
+            if (timer != null) window.clearTimeout(timer);
+        };
+    }, []);
     const latestSelectionRef = useRef<HaloSelection>({
         brightness,
         hue,
@@ -420,6 +452,55 @@ export function Halo({
         return selection;
     };
 
+    const clearTouchGate = () => {
+        const gate = touchGateRef.current;
+        if (gate?.timer != null) window.clearTimeout(gate.timer);
+        touchGateRef.current = null;
+    };
+
+    // Wait to see what a finger is doing: onHold runs once it has rested TOUCH_HOLD_MS without moving.
+    const armTouchGate = (event: React.PointerEvent, kind: TouchGate['kind'], onHold?: (gate: TouchGate) => void) => {
+        clearTouchGate();
+        const gate: TouchGate = {
+            pointerId: event.pointerId,
+            kind,
+            startX: event.clientX,
+            startY: event.clientY,
+            lastX: event.clientX,
+            lastY: event.clientY,
+            timer: null,
+            armed: false,
+        };
+        if (onHold) {
+            gate.timer = window.setTimeout(() => {
+                if (touchGateRef.current !== gate) return;
+                gate.timer = null;
+                gate.armed = true;
+                const activation = (navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation;
+                if (activation?.hasBeenActive) navigator.vibrate?.(8);
+                onHold(gate);
+            }, TOUCH_HOLD_MS);
+        }
+        touchGateRef.current = gate;
+    };
+
+    const startPadDrag = (pad: HTMLDivElement, pointerId: number, clientX: number, clientY: number) => {
+        resetSpeedRuleTracking();
+        setIsDragging(true);
+        setDragSourceMarkerId(null);
+        pendingMarkerDragRef.current = null;
+        onInteractionStart?.();
+        try {
+            pad.setPointerCapture(pointerId);
+        } catch {
+            // the pointer has already gone
+        }
+        const selection = updateFromPosition({ clientX, clientY } as React.PointerEvent, true);
+        if (selection) {
+            triggerPulse(selection);
+        }
+    };
+
     const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
         if (isDiscoMode) {
             setIsDragging(false);
@@ -429,21 +510,22 @@ export function Halo({
             return;
         }
 
+        const finger = event.pointerType !== 'mouse';
         if (!isOn) {
-            onToggle();
+            // A mouse turns the light on at once; a finger when it lifts without having moved, so a swipe over an off
+            // pad doesn't turn it on. Either way it comes back as it was last.
+            if (finger) armTouchGate(event, 'off');
+            else onToggle();
             return;
         }
 
-        resetSpeedRuleTracking();
-        setIsDragging(true);
-        setDragSourceMarkerId(null);
-        pendingMarkerDragRef.current = null;
-        onInteractionStart?.();
-        event.currentTarget.setPointerCapture(event.pointerId);
-        const selection = updateFromPosition(event, true);
-        if (selection) {
-            triggerPulse(selection);
+        if (finger) {
+            const pad = event.currentTarget;
+            armTouchGate(event, 'pad', (gate) => startPadDrag(pad, gate.pointerId, gate.lastX, gate.lastY));
+            return;
         }
+
+        startPadDrag(event.currentTarget, event.pointerId, event.clientX, event.clientY);
     };
 
     const handleMarkerPointerDown = (marker: HaloMarker, event: React.PointerEvent<HTMLButtonElement>) => {
@@ -482,6 +564,17 @@ export function Halo({
             startClientX: event.clientX,
             startClientY: event.clientY,
         };
+        // a finger moves a handle only after the same short hold as the pad
+        if (event.pointerType !== 'mouse') {
+            armTouchGate(event, 'marker', (gate) => {
+                try {
+                    trackpadRef.current?.setPointerCapture(gate.pointerId);
+                } catch {
+                    // the pointer has already gone
+                }
+            });
+            return;
+        }
         trackpadRef.current?.setPointerCapture(event.pointerId);
     };
 
@@ -527,6 +620,18 @@ export function Halo({
     };
 
     const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+        const gate = touchGateRef.current;
+        if (gate && gate.pointerId === event.pointerId && !gate.armed) {
+            gate.lastX = event.clientX;
+            gate.lastY = event.clientY;
+            // moved before the hold: a swipe, which is the page's
+            if (Math.hypot(event.clientX - gate.startX, event.clientY - gate.startY) > TOUCH_SLOP_PX) {
+                clearTouchGate();
+                pendingMarkerDragRef.current = null;
+            }
+            return;
+        }
+
         if (!isDragging) {
             const pendingMarkerDrag = pendingMarkerDragRef.current;
             if (
@@ -558,6 +663,13 @@ export function Halo({
     };
 
     const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+        const gate = touchGateRef.current;
+        if (gate && gate.pointerId === event.pointerId) {
+            clearTouchGate();
+            // a finger lifted from an off pad without moving: turn the light on, as it was last
+            if (gate.kind === 'off' && event.type === 'pointerup') onToggle();
+        }
+
         const pendingMarkerDrag = pendingMarkerDragRef.current;
         if (pendingMarkerDrag?.pointerId === event.pointerId) {
             pendingMarkerDragRef.current = null;
