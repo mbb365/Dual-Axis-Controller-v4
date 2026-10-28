@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import classNames from 'classnames';
 import { HALO_CSS } from './halo/halo-css';
 import {
@@ -176,6 +176,7 @@ export function Halo({
     const pulseIdRef = useRef(0);
     const displaySelectionRef = useRef(displaySelection);
     const animationFrameRef = useRef<number | null>(null);
+    const wasOnRef = useRef(isOn);
     const lastEmittedSelectionRef = useRef<HaloSelection | null>(null);
     const lastVelocitySampleRef = useRef<HaloVelocitySample | null>(null);
     const overspeedStartedAtRef = useRef<number | null>(null);
@@ -241,7 +242,8 @@ export function Halo({
         resetSpeedRuleTracking();
     }, [brightness, buildSelection, hue, isDiscoMode, lockedSpectrumHue, mode, saturation, visualStyle]);
 
-    useEffect(() => {
+    // Before paint, so a light coming on never shows its handle where an off light sat, even for a frame.
+    useLayoutEffect(() => {
         if (isDragging || isDiscoMode) {
             return;
         }
@@ -252,7 +254,14 @@ export function Halo({
             nextSelection.xPercent - currentSelection.xPercent,
             nextSelection.yPercent - currentSelection.yPercent
         );
-        const shouldSnap = movementDelta < 0.35 && Math.abs(nextSelection.brightness - currentSelection.brightness) < 0.75;
+        // While the light is off the handle isn't shown, so it follows at once; when it comes on, the handle appears
+        // where the light is rather than sliding in from where an off light sits, bottom left (Matt, 2026-10-28).
+        const justTurnedOn = isOn && !wasOnRef.current;
+        wasOnRef.current = isOn;
+        const shouldSnap =
+            !isOn ||
+            justTurnedOn ||
+            (movementDelta < 0.35 && Math.abs(nextSelection.brightness - currentSelection.brightness) < 0.75);
 
         if (animationFrameRef.current) {
             window.cancelAnimationFrame(animationFrameRef.current);
@@ -303,7 +312,7 @@ export function Halo({
                 animationFrameRef.current = null;
             }
         };
-    }, [brightness, buildSelection, hue, isDiscoMode, isDragging, lockedSpectrumHue, mode, saturation, visualStyle]);
+    }, [brightness, buildSelection, hue, isDiscoMode, isDragging, isOn, lockedSpectrumHue, mode, saturation, visualStyle]);
 
     useEffect(() => {
         latestSelectionRef.current = dragSelection ?? handoffSelection ?? {
